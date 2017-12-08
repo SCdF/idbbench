@@ -11,7 +11,7 @@
   <h2>Generate me some data</h2>
   <div><label for="documents">How many documents? </label><input type="text" id="documents" value=1000></div>
   <button id="generate">Generate</button>
-  <button id="clear-generate">Clear then generate</button>
+  <!-- <button id="clear-generate">Clear then generate</button> -->
   <h2>Warm me some indexes</h2>
   <div>
     <button id="indexes-pouchdb">Pouchdb</button>
@@ -32,7 +32,19 @@
 </script>
 <script>
   /* jshint browser: true */
-  var IndexedDB = window.indexedDB;
+
+  // MOZ MOZ MOZ MOZ MOZ MOZ MOZ
+  // MOZ MOZ MOZ MOZ MOZ MOZ MOZ
+  //  The next bit is from MDN
+  // MOZ MOZ MOZ MOZ MOZ MOZ MOZ
+  // MOZ MOZ MOZ MOZ MOZ MOZ MOZ
+  // In the following line, you should include the prefixes of implementations you want to test.
+  window.indexedDB = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB || window.msIndexedDB;
+  // DON'T use "var indexedDB = ..." if you're not in a function.
+  // Moreover, you may need references to some window.IDB* objects:
+  window.IDBTransaction = window.IDBTransaction || window.webkitIDBTransaction || window.msIDBTransaction || {READ_WRITE: "readwrite"}; // This line should only be needed if it is needed to support the object's constants for older browsers
+  window.IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange || window.msIDBKeyRange;
+  // (Mozilla has never prefixed these objects, so we don't need window.mozIDB*)
 
   var POUCHDB_NAME = 'idbnext';
   var IDB_NATIVE_NAME = 'idbnext-native';
@@ -85,11 +97,11 @@
     }).then(function() {
       console.log('PouchDB initialised!');
       return new Promise(function(resolve, reject) {
-        IndexedDB.deleteDatabase(IDB_NATIVE_NAME);
-        IndexedDB.deleteDatabase(IDB_ARTIFICIAL_NAME);
+        window.indexedDB.deleteDatabase(IDB_NATIVE_NAME);
+        window.indexedDB.deleteDatabase(IDB_ARTIFICIAL_NAME);
 
-        var native = IndexedDB.open(IDB_NATIVE_NAME, 1);
-        var artificial = IndexedDB.open(IDB_ARTIFICIAL_NAME, 1);
+        var native = window.indexedDB.open(IDB_NATIVE_NAME, 1);
+        var artificial = window.indexedDB.open(IDB_ARTIFICIAL_NAME, 1);
 
         var nativeDone = false;
         var artificialDone = false;
@@ -100,6 +112,7 @@
         native.onsuccess = function(event) {
           console.log('Native-Index IDB initialised!');
           iNative = native.result;
+          nativeDone = true;
           if (artificialDone) {
             resolve();
           }
@@ -107,6 +120,7 @@
         artificial.onsuccess = function(event) {
           console.log('Artificial-Index IDB initialised!');
           iArtificial = artificial.result;
+          artificialDone = true;
           if (nativeDone) {
             resolve();
           }
@@ -150,6 +164,10 @@
   function between(start, end) {
     return start + Math.random() * (end - start);
   }
+
+  function aDate() {
+    return Math.floor(between(Date.parse('2000'), Date.parse('2017')))
+  };
 
   function generate() {
     var store = function(docs, total) {
@@ -227,7 +245,7 @@
       docs.push({
         _id: uuidv4(),
         type: oneOf(['foo', 'bar', 'smang']),
-        created_date: Math.floor(between(Date.parse('2000'), Date.parse('2017'))),
+        created_date: aDate(),
         created_by: 'person:' + Math.floor(between(0, 1000)),
         a_boolean: oneOf([true, false, null, undefined]),
       });
@@ -252,9 +270,9 @@
       });
   }
 
-  document.getElementById('clear-generate').addEventListener('click', function() {
-    bootstrap().then(generate);
-  });
+  // document.getElementById('clear-generate').addEventListener('click', function() {
+  //   bootstrap().then(generate);
+  // });
   document.getElementById('generate').addEventListener('click', generate);
   document.getElementById('indexes-pouchdb').addEventListener('click', function() {
     console.log('Warming PouchDB indexes...');
@@ -265,7 +283,21 @@
       });
   });
   document.getElementById('indexes-native').addEventListener('click', function() {
+    console.log('Warming Native indexes');
 
+    time('warm-native', function() {
+      return new Promise(function(resolve, reject) {
+        iNative.transaction(iNativeViewCreatedDate)
+        .objectStore(iNativeViewCreatedDate)
+        .openCursor(window.IDBKeyRange.bound(aDate(), aDate()))
+        .onsuccess = function(event) {
+          var cursor = event.target.result;
+          resolve();
+        };
+      });
+    }).then(function(timed) {
+      console.log('Warmed Native indexes, took', timed[0], 'millis');
+    });
   });
   document.getElementById('indexes-artificial').addEventListener('click', function() {
 
