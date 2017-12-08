@@ -12,14 +12,22 @@
   <div><label for="documents">How many documents? </label><input type="text" id="documents" value=1000></div>
   <button id="generate">Generate</button>
   <button id="clear-generate">Clear then generate</button>
-  <h2>Generate me some indexes</h2>
-  <div><button id="indexes-pouchdb">Pouchdb</button></div>
-  <div><button id="indexes-native">Native</button></div>
-  <div><button id="indexes-artificial">Artificial</button></div>
+  <h2>Warm me some indexes</h2>
+  <div>
+    <button id="indexes-pouchdb">Pouchdb</button>
+    <button id="indexes-native">Native</button>
+    <button id="indexes-artificial">Artificial</button>
+  </div>
   <h2>Query me some indexes</h2>
-  <div><button id="query-pouchdb">Pouchdb</button></div>
-  <div><button id="query-native">Native</button></div>
-  <div><button id="query-artificial">Artificial</button></div>
+  <div>
+    <button id="query-pouchdb">Pouchdb</button>
+    <button id="query-native">Native</button>
+    <button id="query-artificial">Artificial</button>
+  </div>
+  <h2>Look at me timings</h2>
+  <div><button id="dump-timings">Dump Timings</button></div>
+  <br/><br/>
+  <div><button id="reset-timings">!!!Reset Timings!!!</button></div>
 <script src="//cdn.jsdelivr.net/npm/pouchdb@6.3.4/dist/pouchdb.min.js"></script>
 </script>
 <script>
@@ -38,8 +46,27 @@
   var iArtificialData = 'data';
   var iArtificialView = 'view';
 
+  // Total time measurements
+  function time(title, fn) {
+    var before = new Date().getTime();
+    var result = fn();
+    if (result.then) {
+      return result.then(function(result) {
+        var t = new Date().getTime() - before;
+        times[title] = (times[title] || 0) + t;
+        return [t, result];
+      });
+    } else {
+      var t = new Date().getTime() - before;
+      times[title] = (times[title] || 0) + t;
+      return [t, result];
+    }
+  }
+  var times = {};
+
   function bootstrap() {
     console.log('Initialising Databases...');
+    times = {};
     db = new PouchDB(POUCHDB_NAME);
     return db.destroy()
     .then(function() {
@@ -126,8 +153,8 @@
 
   function generate() {
     var store = function(docs, total) {
-      return db.bulkDocs(docs)
-      .then(function() {
+      return time('insert-pouchdb', function() { return db.bulkDocs(docs); })
+      .then(function() { return time('insert-native', function() {
         // Native
         var tx = iNative.transaction(iNative.objectStoreNames, "readwrite"); // TODO: maybe old style readwrite?
 
@@ -154,8 +181,8 @@
           tx.oncomplete = resolve;
           tx.onerror = reject;
         });
-      })
-      .then(function() {
+      });})
+      .then(function() { return time('insert-artificial', function() {
         // Artificial
         var tx = iArtificial.transaction(iArtificial.objectStoreNames, "readwrite"); // TODO: maybe old style readwrite?
 
@@ -180,7 +207,7 @@
           tx.oncomplete = resolve;
           tx.onerror = reject;
         });
-      })
+      });})
       .then(function() {
         console.log('Generated', total);
       })
@@ -225,20 +252,6 @@
       });
   }
 
-  function time(fnToTime) {
-    var before = new Date().getTime();
-    var result = fnToTime();
-    if (result.then) {
-      return result.then(function(result) {
-        var t = new Date().getTime() - before;
-        return [t, result];
-      });
-    } else {
-      var t = new Date().getTime() - before;
-      return [t, result];
-    }
-  }
-
   document.getElementById('clear-generate').addEventListener('click', function() {
     bootstrap().then(generate);
   });
@@ -246,7 +259,7 @@
   document.getElementById('indexes-pouchdb').addEventListener('click', function() {
     console.log('Warming PouchDB indexes...');
 
-    time(function() {return db.query('idbnext/created_date', {limit: 1});})
+    time('warm-pouchdb', function() {return db.query('idbnext/created_date', {limit: 1});})
       .then(function(timed) {
         console.log('Warmed PouchDB indexes, took', timed[0], 'millis');
       });
@@ -266,6 +279,15 @@
   });
   document.getElementById('query-artificial').addEventListener('click', function() {
 
+  });
+  document.getElementById('dump-timings').addEventListener('click', function() {
+    console.log('TIMINGS');
+    console.log(JSON.stringify(times, null, 2));
+    console.log(times);
+  });
+  document.getElementById('reset-timings').addEventListener('click', function() {
+    times = {};
+    console.log('Reset times');
   });
 </script>
 </body>
