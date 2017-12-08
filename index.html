@@ -8,10 +8,12 @@
   <h1>idbnext benchmarks</h1>
   <p>Benchmarking the difference between current the PouchDB indexeddb backend, "correct" raw indexeddb indexes, and a singular artificial index.</p>
   <p><strong style="color: red">!!!Open the console to see output!!!</strong></p>
+  <h2>Main engine on</h2>
+  <p>Click this first, or click it later to reset everything (NB: refresh first otherwise things break)</p>
+  <button id='bootstrap'>Bootstrap</button>
   <h2>Generate me some data</h2>
   <div><label for="documents">How many documents? </label><input type="text" id="documents" value=1000></div>
   <button id="generate">Generate</button>
-  <!-- <button id="clear-generate">Clear then generate</button> -->
   <h2>Warm me some indexes</h2>
   <div>
     <button id="indexes-pouchdb">Pouchdb</button>
@@ -77,7 +79,7 @@
   var times = {};
 
   function bootstrap() {
-    console.log('Initialising Databases...');
+    console.log('Boostrapping databases...');
     times = {};
     db = new PouchDB(POUCHDB_NAME);
     return db.destroy()
@@ -96,58 +98,58 @@
       });
     }).then(function() {
       console.log('PouchDB initialised!');
+
+      // TODO: this doesn't work more than once, probably because there are references held open to DBs
       return new Promise(function(resolve, reject) {
-        window.indexedDB.deleteDatabase(IDB_NATIVE_NAME);
-        window.indexedDB.deleteDatabase(IDB_ARTIFICIAL_NAME);
+        var req = window.indexedDB.deleteDatabase(IDB_NATIVE_NAME);
+        req.onerror = reject;
+        req.onsuccess = function() {
+          var native = window.indexedDB.open(IDB_NATIVE_NAME, 1);
 
-        var native = window.indexedDB.open(IDB_NATIVE_NAME, 1);
-        var artificial = window.indexedDB.open(IDB_ARTIFICIAL_NAME, 1);
+          // TODO: work out the Chrome 30 version of this?
+          native.onupgradeneeded = function(event) {
+            var idb = event.target.result;
+            idb.createObjectStore(iNativeData, { keyPath: '_id' });
+            // I realise IRL these keyPaths would be not be named so nicely, and would be generated based on
+            // what is emited from views.
+            idb.createObjectStore(iNativeViewCreatedDate, { keyPath: 'created_date' });
+            idb.createObjectStore(iNativeViewTypeByPersonByDate, { keyPath: ['type', 'created_by', 'created_date']});
+          };
 
-        var nativeDone = false;
-        var artificialDone = false;
-
-        native.onerror = reject;
-        artificial.onerror = reject;
-
-        native.onsuccess = function(event) {
-          console.log('Native-Index IDB initialised!');
-          iNative = native.result;
-          nativeDone = true;
-          if (artificialDone) {
+          native.onsuccess = function(event) {
+            console.log('Native-Index IDB initialised!');
+            iNative = native.result;
             resolve();
-          }
+          };
+
+          native.onerror = reject;
         };
-        artificial.onsuccess = function(event) {
-          console.log('Artificial-Index IDB initialised!');
-          iArtificial = artificial.result;
-          artificialDone = true;
-          if (nativeDone) {
+      }).then(new Promise(function(resolve, reject) {
+        var req = window.indexedDB.deleteDatabase(IDB_ARTIFICIAL_NAME);
+        req.onerror = reject;
+        req.onsuccess = function() {
+          var artificial = window.indexedDB.open(IDB_ARTIFICIAL_NAME, 1);
+
+          artificial.onupgradeneeded = function(event) {
+            var idb = event.target.result;
+            idb.createObjectStore(iArtificialData, { keyPath: '_id' });
+
+            // TODO: unsure if this is actually how this would work
+            idb.createObjectStore(iArtificialView, { keyPath: 'keyArray'});
+          };
+
+          artificial.onsuccess = function(event) {
+            console.log('Artificial-Index IDB initialised!');
+            iArtificial = artificial.result;
             resolve();
-          }
-        };
+          };
 
-        // TODO: work out the Chrome 30 version of this?
-        native.onupgradeneeded = function(event) {
-          var idb = event.target.result;
-          idb.createObjectStore(iNativeData, { keyPath: '_id' });
-          // I realise IRL these keyPaths would be not be named so nicely, and would be generated based on
-          // what is emited from views.
-          idb.createObjectStore(iNativeViewCreatedDate, { keyPath: 'created_date' });
-          idb.createObjectStore(iNativeViewTypeByPersonByDate, { keyPath: ['type', 'created_by', 'created_date']});
-        };
+          artificial.onerror = reject;
 
-        artificial.onupgradeneeded = function(event) {
-          var idb = event.target.result;
-          idb.createObjectStore(iArtificialData, { keyPath: '_id' });
-
-          // TODO: unsure if this is actually how this would work
-          idb.createObjectStore(iArtificialView, { keyPath: 'keyArray'});
         };
+        }));
       });
-    });
   }
-
-  bootstrap();
 
   // Nicked from: http://stackoverflow.com/questions/105034/ddg#2117523
   function uuidv4() {
@@ -270,9 +272,7 @@
       });
   }
 
-  // document.getElementById('clear-generate').addEventListener('click', function() {
-  //   bootstrap().then(generate);
-  // });
+  document.getElementById('bootstrap').addEventListener('click', bootstrap);
   document.getElementById('generate').addEventListener('click', generate);
   document.getElementById('indexes-pouchdb').addEventListener('click', function() {
     console.log('Warming PouchDB indexes...');
