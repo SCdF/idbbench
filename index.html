@@ -112,6 +112,27 @@
             idb.createObjectStore(iNativeData, { keyPath: '_id' });
             // I realise IRL these keyPaths would be not be named so nicely, and would be generated based on
             // what is emited from views.
+            // TODO: investigate the difference (if any) between having _id vs. the view indexing as
+            //       the object store vs. an index. Does flipping them affect performance?
+
+
+
+
+
+
+
+            // TODO: view object stores need to be _id indexed
+            //       do that, then add an index for the actual thing you care about
+
+
+
+
+
+
+
+
+
+
             idb.createObjectStore(iViewCreatedDate, { keyPath: 'created_date' });
             idb.createObjectStore(iViewTypeByPersonByDate, { keyPath: ['type', 'created_by', 'created_date']});
           };
