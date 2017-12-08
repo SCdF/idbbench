@@ -24,11 +24,18 @@
 </script>
 <script>
   /* jshint browser: true */
+
+  var db;
+
   function bootstrap() {
     console.log('Initialising PouchDB DB');
     db = new PouchDB('idbnext-bm');
-    return db.destroy();
+    return db.destroy().then(function() {
+      db = new PouchDB('idbnext-bm');
+    });
   }
+
+  bootstrap();
 
   function oneOf(things) {
     return things[Math.floor(Math.random() * things.length)];
@@ -39,7 +46,6 @@
   }
 
   function generate() {
-    db = new PouchDB('idbnext-bm');
     var store = function(docs, total) {
       return db.bulkDocs(docs)
       .then(function() {
@@ -48,8 +54,8 @@
       .catch(function(err) {
         console.error('Failed to generate', total);
         console.error(err);
-      })
-    }
+      });
+    };
 
     var docsToGenerate = document.getElementById('documents').value;
 
