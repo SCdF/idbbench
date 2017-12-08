@@ -8,9 +8,9 @@
   <h1>idbnext benchmarks</h1>
   <p>Benchmarking the difference between current the PouchDB indexeddb backend, "correct" raw indexeddb indexes, and a singular artificial index.</p>
   <p><strong style="color: red">!!!Open the console to see output!!!</strong></p>
-<!--   <h2>Main engine on</h2>
+  <h2>Main engine on</h2>
   <p>Click this first, or click it later to reset everything (NB: refresh first otherwise things break)</p>
-  <button id='bootstrap'>Bootstrap</button> -->
+  <button id='bootstrap'>Bootstrap</button>
   <h2>Generate me some data</h2>
   <div><label for="documents">How many documents? </label><input type="text" id="documents" value=1000></div>
   <button id="generate">Generate</button>
@@ -101,7 +101,17 @@
 
       // TODO: this doesn't work more than once, probably because there are references held open to DBs
       return new Promise(function(resolve, reject) {
-        // TODO: if open then close
+        // var closeDb = function(db) {
+        //   return new Promise(resolve, reject) {
+        //     if (!db) {
+        //       resolve();
+        //     }
+
+        //     db.
+        //   }
+        // }
+
+        if (iNative) iNative.close();
         var req = window.indexedDB.deleteDatabase(IDB_NATIVE_NAME);
         req.onerror = reject;
         req.onsuccess = function() {
@@ -133,6 +143,7 @@
         };
       }).then(new Promise(function(resolve, reject) {
         // TODO: if open then close
+        if (iArtificial) iArtificial.close();
         var req = window.indexedDB.deleteDatabase(IDB_ARTIFICIAL_NAME);
         req.onerror = reject;
         req.onsuccess = function() {
@@ -159,8 +170,6 @@
         }));
       });
   }
-
-  bootstrap();
 
   // Nicked from: http://stackoverflow.com/questions/105034/ddg#2117523
   function uuidv4() {
@@ -283,8 +292,50 @@
       });
   }
 
-  // document.getElementById('bootstrap').addEventListener('click', bootstrap);
+  document.getElementById('bootstrap').addEventListener('click', bootstrap);
   document.getElementById('generate').addEventListener('click', generate);
+  var queryNative = function() {
+    return new Promise(function(resolve, reject) {
+      var tx = iNative.transaction(iNative.objectStoreNames);
+      tx.objectStore(iViewCreatedDate)
+        .index(iViewCreatedDate)
+        .openCursor(window.IDBKeyRange.lowerBound(Date.parse('2010')))
+        .onsuccess = function(event) {
+          var cursor = event.target.result;
+          console.debug(cursor.value);
+          tx.objectStore(iViewTypeByPersonByDate)
+            .index(iViewTypeByPersonByDate)
+            .openCursor(window.IDBKeyRange.lowerBound(['foo']))
+            .onsuccess = function(event) {
+              var cursor = event.target.result;
+              console.debug(cursor.value);
+              resolve();
+            };
+        };
+    });
+  }
+
+  var queryArtificial = function() {
+    return new Promise(function(resolve, reject) {
+      var tx = iArtificial.transaction(iArtificial.objectStoreNames);
+      tx.objectStore(iArtificialView)
+        .index(iArtificialView)
+        .openCursor(window.IDBKeyRange.lowerBound([iViewCreatedDate, Date.parse('2010')]))
+        .onsuccess = function(event) {
+          var cursor = event.target.result;
+          console.debug(cursor.value);
+          tx.objectStore(iArtificialView)
+            .index(iArtificialView)
+            .openCursor(window.IDBKeyRange.lowerBound([iViewTypeByPersonByDate, ['foo']]))
+            .onsuccess = function(event) {
+              var cursor = event.target.result;
+              console.debug(cursor.value);
+              resolve();
+            };
+        };
+    });
+  };
+
   document.getElementById('indexes-pouchdb').addEventListener('click', function() {
     console.log('Warming PouchDB indexes...');
 
@@ -293,67 +344,36 @@
         console.log('Warmed PouchDB indexes, took', timed[0], 'millis');
       });
   });
+
   document.getElementById('indexes-native').addEventListener('click', function() {
     console.log('Warming Native indexes');
 
-    time('warm-native', function() {
-      return new Promise(function(resolve, reject) {
-        var tx = iNative.transaction(iNative.objectStoreNames);
-        tx.objectStore(iViewCreatedDate)
-          .index(iViewCreatedDate)
-          .openCursor(window.IDBKeyRange.lowerBound(Date.parse('2010')))
-          .onsuccess = function(event) {
-            var cursor = event.target.result;
-            console.debug(cursor.value);
-            tx.objectStore(iViewTypeByPersonByDate)
-              .index(iViewTypeByPersonByDate)
-              .openCursor(window.IDBKeyRange.lowerBound(['foo']))
-              .onsuccess = function(event) {
-                var cursor = event.target.result;
-                console.debug(cursor.value);
-                resolve();
-              };
-          };
-      });
-    }).then(function(timed) {
+    time('warm-native', queryNative).then(function(timed) {
       console.log('Warmed Native indexes, took', timed[0], 'millis');
     });
   });
   document.getElementById('indexes-artificial').addEventListener('click', function() {
     console.log('Warming Artificial indexes');
 
-    time('warm-artificial', function() {
-      return new Promise(function(resolve, reject) {
-        var tx = iArtificial.transaction(iArtificial.objectStoreNames);
-        tx.objectStore(iArtificialView)
-          .index(iArtificialView)
-          .openCursor(window.IDBKeyRange.lowerBound([iViewCreatedDate, Date.parse('2010')]))
-          .onsuccess = function(event) {
-            var cursor = event.target.result;
-            console.debug(cursor.value);
-            tx.objectStore(iArtificialView)
-              .index(iArtificialView)
-              .openCursor(window.IDBKeyRange.lowerBound([iViewTypeByPersonByDate, ['foo']]))
-              .onsuccess = function(event) {
-                var cursor = event.target.result;
-                console.debug(cursor.value);
-                resolve();
-              };
-          };
-      });
-    }).then(function(timed) {
+    time('warm-artificial', queryArtificial).then(function(timed) {
       console.log('Warmed Native indexes, took', timed[0], 'millis');
     });
   });
   document.getElementById('query-pouchdb').addEventListener('click', function() {
-    console.log('Querying PouchDB indexes');
-
+    time('query-pouchdb', function() {return db.query('idbnext/created_date', {limit: 1});})
+      .then(function(timed) {
+        console.log('Queried PouchDB indexes, took', timed[0], 'millis');
+      });
   });
   document.getElementById('query-native').addEventListener('click', function() {
-
+    time('query-native', queryNative).then(function(timed) {
+      console.log('Warmed Native indexes, took', timed[0], 'millis');
+    });
   });
   document.getElementById('query-artificial').addEventListener('click', function() {
-
+    time('query-artificial', queryArtificial).then(function(timed) {
+      console.log('Warmed Native indexes, took', timed[0], 'millis');
+    });
   });
   document.getElementById('dump-timings').addEventListener('click', function() {
     console.log('TIMINGS');
