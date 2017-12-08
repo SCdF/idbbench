@@ -101,6 +101,7 @@
 
       // TODO: this doesn't work more than once, probably because there are references held open to DBs
       return new Promise(function(resolve, reject) {
+        // TODO: if open then close
         var req = window.indexedDB.deleteDatabase(IDB_NATIVE_NAME);
         req.onerror = reject;
         req.onsuccess = function() {
@@ -112,29 +113,14 @@
             idb.createObjectStore(iNativeData, { keyPath: '_id' });
             // I realise IRL these keyPaths would be not be named so nicely, and would be generated based on
             // what is emited from views.
-            // TODO: investigate the difference (if any) between having _id vs. the view indexing as
-            //       the object store vs. an index. Does flipping them affect performance?
-
-
-
-
-
-
-
-            // TODO: view object stores need to be _id indexed
-            //       do that, then add an index for the actual thing you care about
-
-
-
-
-
-
-
-
-
-
-            idb.createObjectStore(iViewCreatedDate, { keyPath: 'created_date' });
-            idb.createObjectStore(iViewTypeByPersonByDate, { keyPath: ['type', 'created_by', 'created_date']});
+            // NB: _id indexes aren't used in the bench, but are needed by pouch so when data
+            //     changes you can find existing view entries and remove them
+            var os1 = idb.createObjectStore(iViewCreatedDate, {autoIncrement: true});
+            os1.createIndex('id', '_id');
+            os1.createIndex(iViewCreatedDate, 'created_date', {unique: false});
+            var os2 = idb.createObjectStore(iViewTypeByPersonByDate, {autoIncrement: true});
+            os2.createIndex('id', '_id');
+            os2.createIndex(iViewTypeByPersonByDate, ['type', 'created_by', 'created_date'], {unique: false});
           };
 
           native.onsuccess = function(event) {
@@ -146,6 +132,7 @@
           native.onerror = reject;
         };
       }).then(new Promise(function(resolve, reject) {
+        // TODO: if open then close
         var req = window.indexedDB.deleteDatabase(IDB_ARTIFICIAL_NAME);
         req.onerror = reject;
         req.onsuccess = function() {
@@ -155,8 +142,9 @@
             var idb = event.target.result;
             idb.createObjectStore(iArtificialData, { keyPath: '_id' });
 
-            // TODO: unsure if this is actually how this would work
-            idb.createObjectStore(iArtificialView, { keyPath: 'keyArray'});
+            var os1 = idb.createObjectStore(iArtificialView, {autoIncrement: true});
+            os1.createIndex('id', '_id');
+            os1.createIndex(iArtificialView, 'keyArray', {unique: false});
           };
 
           artificial.onsuccess = function(event) {
@@ -312,11 +300,13 @@
       return new Promise(function(resolve, reject) {
         var tx = iNative.transaction(iNative.objectStoreNames);
         tx.objectStore(iViewCreatedDate)
+          .index(iViewCreatedDate)
           .openCursor(window.IDBKeyRange.lowerBound(Date.parse('2010')))
           .onsuccess = function(event) {
             var cursor = event.target.result;
             console.debug(cursor.value);
             tx.objectStore(iViewTypeByPersonByDate)
+              .index(iViewTypeByPersonByDate)
               .openCursor(window.IDBKeyRange.lowerBound(['foo']))
               .onsuccess = function(event) {
                 var cursor = event.target.result;
@@ -336,11 +326,13 @@
       return new Promise(function(resolve, reject) {
         var tx = iArtificial.transaction(iArtificial.objectStoreNames);
         tx.objectStore(iArtificialView)
+          .index(iArtificialView)
           .openCursor(window.IDBKeyRange.lowerBound([iViewCreatedDate, Date.parse('2010')]))
           .onsuccess = function(event) {
             var cursor = event.target.result;
             console.debug(cursor.value);
             tx.objectStore(iArtificialView)
+              .index(iArtificialView)
               .openCursor(window.IDBKeyRange.lowerBound([iViewTypeByPersonByDate, ['foo']]))
               .onsuccess = function(event) {
                 var cursor = event.target.result;
