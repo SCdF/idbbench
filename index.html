@@ -86,10 +86,6 @@
           }
         }
 
-        var schema = function(event) {
-          var db = event.target.result;
-        };
-
         // TODO: work out the Chrome 30 version of this?
         native.onupgradeneeded = function(event) {
           var idb = event.target.result;
