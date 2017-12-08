@@ -26,17 +26,21 @@
   /* jshint browser: true */
   var IndexedDB = window.indexedDB;
 
-
-  var db, iNative, iArtificial;
+  var POUCHDB_NAME = 'idbnext';
   var IDB_NATIVE_NAME = 'idbnext-native';
   var IDB_ARTIFICIAL_NAME = 'idbnext-artificial';
 
+  // DBs etc
+  var db, iNative, iArtificial;
+  var iNativeData, iNativeData, iNativeViewCreatedDate, iNativeViewTypeByPersonByDate;
+  var iArtificialData, iArtificialView;
+
   function bootstrap() {
     console.log('Initialising Databases...');
-    db = new PouchDB('idbnext-bm');
+    db = new PouchDB(POUCHDB_NAME);
     return db.destroy()
     .then(function() {
-      db = new PouchDB('idbnext-bm');
+      db = new PouchDB(POUCHDB_NAME);
       return db.put({
         _id: '_design/idbnext',
         views: {
@@ -89,19 +93,19 @@
         // TODO: work out the Chrome 30 version of this?
         native.onupgradeneeded = function(event) {
           var idb = event.target.result;
-          var rawData = idb.createObjectStore('data', { keyPath: '_id' });
+          iNativeData = idb.createObjectStore('data', { keyPath: '_id' });
           // I realise IRL these keyPaths would be not be named so nicely, and would be generated based on
           // what is emited from views.
-          var createdDateView = idb.createObjectStore('view__created_date', { keyPath: 'created_date' });
-          var typeByPersonByDateView = idb.createObjectStore('view__type_by_person_by_date', { keyPath: ['type', 'created_by', 'created_date']});
+          iNativeViewCreatedDate = idb.createObjectStore('view__created_date', { keyPath: 'created_date' });
+          iNativeViewTypeByPersonByDate = idb.createObjectStore('view__type_by_person_by_date', { keyPath: ['type', 'created_by', 'created_date']});
         };
+
         artificial.onupgradeneeded = function(event) {
           var idb = event.target.result;
-          var rawData = idb.createObjectStore('data', { keyPath: '_id' });
-          // I realise IRL these keyPaths would be not be named so nicely, and would be generated based on
-          // what is emited from views.
-          var createdDateView = idb.createObjectStore('view__created_date', { keyPath: 'created_date' });
-          var typeByPersonByDateView = idb.createObjectStore('view__type_by_person_by_date', { keyPath: ['type', 'created_by', 'created_date']});
+          iArtificialData = idb.createObjectStore('data', { keyPath: '_id' });
+
+          // TODO: unsure if this is actually how this would work
+          iArtificialView = idb.createObjectStore('view', { keyPath: 'keyArray'});
         };
       });
     });
