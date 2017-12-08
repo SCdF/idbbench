@@ -32,8 +32,11 @@
 
   // DBs etc
   var db, iNative, iArtificial;
-  var iNativeData, iNativeData, iNativeViewCreatedDate, iNativeViewTypeByPersonByDate;
-  var iArtificialData, iArtificialView;
+  var iNativeData = 'data';
+  var iNativeViewCreatedDate = 'view__created_date';
+  var iNativeViewTypeByPersonByDate = 'view__type_by_person_by_date';
+  var iArtificialData = 'data';
+  var iArtificialView = 'view';
 
   function bootstrap() {
     console.log('Initialising Databases...');
@@ -64,12 +67,8 @@
         var nativeDone = false;
         var artificialDone = false;
 
-        native.onerror = function(event) {
-          reject(event);
-        };
-        artificial.onerror = function(event) {
-          reject(event);
-        };
+        native.onerror = reject;
+        artificial.onerror = reject;
 
         native.onsuccess = function(event) {
           console.log('Native-Index IDB initialised!');
@@ -77,37 +76,45 @@
           if (artificialDone) {
             resolve();
           }
-        }
+        };
         artificial.onsuccess = function(event) {
-          console.log('Native-Index IDB initialised!');
-          iNative = native.result;
-          if (artificialDone) {
+          console.log('Artificial-Index IDB initialised!');
+          iArtificial = artificial.result;
+          if (nativeDone) {
             resolve();
           }
-        }
+        };
 
         // TODO: work out the Chrome 30 version of this?
         native.onupgradeneeded = function(event) {
           var idb = event.target.result;
-          iNativeData = idb.createObjectStore('data', { keyPath: '_id' });
+          idb.createObjectStore(iNativeData, { keyPath: '_id' });
           // I realise IRL these keyPaths would be not be named so nicely, and would be generated based on
           // what is emited from views.
-          iNativeViewCreatedDate = idb.createObjectStore('view__created_date', { keyPath: 'created_date' });
-          iNativeViewTypeByPersonByDate = idb.createObjectStore('view__type_by_person_by_date', { keyPath: ['type', 'created_by', 'created_date']});
+          idb.createObjectStore(iNativeViewCreatedDate, { keyPath: 'created_date' });
+          idb.createObjectStore(iNativeViewTypeByPersonByDate, { keyPath: ['type', 'created_by', 'created_date']});
         };
 
         artificial.onupgradeneeded = function(event) {
           var idb = event.target.result;
-          iArtificialData = idb.createObjectStore('data', { keyPath: '_id' });
+          idb.createObjectStore(iArtificialData, { keyPath: '_id' });
 
           // TODO: unsure if this is actually how this would work
-          iArtificialView = idb.createObjectStore('view', { keyPath: 'keyArray'});
+          idb.createObjectStore(iArtificialView, { keyPath: 'keyArray'});
         };
       });
     });
   }
 
   bootstrap();
+
+  // Nicked from: http://stackoverflow.com/questions/105034/ddg#2117523
+  function uuidv4() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
 
   function oneOf(things) {
     return things[Math.floor(Math.random() * things.length)];
@@ -120,6 +127,60 @@
   function generate() {
     var store = function(docs, total) {
       return db.bulkDocs(docs)
+      .then(function() {
+        // Native
+        var tx = iNative.transaction(iNative.objectStoreNames, "readwrite"); // TODO: maybe old style readwrite?
+
+        var data = tx.objectStore(iNativeData),
+            viewCreatedDate = tx.objectStore(iNativeViewCreatedDate),
+            viewTypeByPersonByDate = tx.objectStore(iNativeViewTypeByPersonByDate);
+
+        docs.forEach(doc => {
+          data.add(doc);
+          // Yes, this would be running the actual JS instead of manually rewriting it
+          viewCreatedDate.add({
+            created_date: doc.created_date,
+            _id: doc._id
+          });
+          viewTypeByPersonByDate.add({
+            type: doc.type,
+            created_by: doc.created_by,
+            created_date: doc.created_date,
+            _id: doc._id
+          });
+        });
+
+        return new Promise(function(resolve, reject) {
+          tx.oncomplete = resolve;
+          tx.onerror = reject;
+        });
+      })
+      .then(function() {
+        // Artificial
+        var tx = iArtificial.transaction(iArtificial.objectStoreNames, "readwrite"); // TODO: maybe old style readwrite?
+
+        var data = tx.objectStore(iArtificialData),
+            views = tx.objectStore(iArtificialView);
+
+        docs.forEach(doc => {
+          data.add(doc);
+          // Yes, this would be running the actual JS instead of manually rewriting it
+          views.add({
+            keyArray: ['created_date', doc.created_date],
+            _id: doc._id
+          });
+          views.add({
+            // TODO: would keyArray[1] be an array or would it be exploded out?
+            keyArray: ['type_by_person_by_date', [doc.type, doc.created_by, doc.created_date]],
+            _id: doc._id
+          });
+        });
+
+        return new Promise(function(resolve, reject) {
+          tx.oncomplete = resolve;
+          tx.onerror = reject;
+        });
+      })
       .then(function() {
         console.log('Generated', total);
       })
@@ -137,6 +198,7 @@
     for (var i = 0; i < docsToGenerate; i++) {
       total += 1;
       docs.push({
+        _id: uuidv4(),
         type: oneOf(['foo', 'bar', 'smang']),
         created_date: Math.floor(between(Date.parse('2000'), Date.parse('2017'))),
         created_by: 'person:' + Math.floor(between(0, 1000)),
@@ -150,6 +212,7 @@
     }
     store(docs, total)
       .then(function() {
+        // TODO: pull info from idb as well?
         return db.info();
       })
       .then(function(info) {
