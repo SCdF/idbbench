@@ -61,6 +61,7 @@
   var iArtificialView = 'view';
 
   // Total time measurements
+  // TODO: implement last 100 rolling average, mean, min, max
   function time(title, fn) {
     var before = new Date().getTime();
     var result = fn();
@@ -78,6 +79,7 @@
   }
   var times = {};
 
+  // TODO: implement arbitary numbers of indexes to stress the system properly, default 10
   function bootstrap() {
     console.log('Boostrapping databases...');
     times = {};
