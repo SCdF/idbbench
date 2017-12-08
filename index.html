@@ -55,8 +55,8 @@
   // DBs etc
   var db, iNative, iArtificial;
   var iNativeData = 'data';
-  var iNativeViewCreatedDate = 'view__created_date';
-  var iNativeViewTypeByPersonByDate = 'view__type_by_person_by_date';
+  var iViewCreatedDate = 'view__created_date';
+  var iViewTypeByPersonByDate = 'view__type_by_person_by_date';
   var iArtificialData = 'data';
   var iArtificialView = 'view';
 
@@ -112,8 +112,8 @@
             idb.createObjectStore(iNativeData, { keyPath: '_id' });
             // I realise IRL these keyPaths would be not be named so nicely, and would be generated based on
             // what is emited from views.
-            idb.createObjectStore(iNativeViewCreatedDate, { keyPath: 'created_date' });
-            idb.createObjectStore(iNativeViewTypeByPersonByDate, { keyPath: ['type', 'created_by', 'created_date']});
+            idb.createObjectStore(iViewCreatedDate, { keyPath: 'created_date' });
+            idb.createObjectStore(iViewTypeByPersonByDate, { keyPath: ['type', 'created_by', 'created_date']});
           };
 
           native.onsuccess = function(event) {
@@ -168,7 +168,7 @@
   }
 
   function aDate() {
-    return Math.floor(between(Date.parse('2000'), Date.parse('2017')))
+    return Math.floor(between(Date.parse('2000'), Date.parse('2017')));
   };
 
   function generate() {
@@ -179,8 +179,8 @@
         var tx = iNative.transaction(iNative.objectStoreNames, "readwrite"); // TODO: maybe old style readwrite?
 
         var data = tx.objectStore(iNativeData),
-            viewCreatedDate = tx.objectStore(iNativeViewCreatedDate),
-            viewTypeByPersonByDate = tx.objectStore(iNativeViewTypeByPersonByDate);
+            viewCreatedDate = tx.objectStore(iViewCreatedDate),
+            viewTypeByPersonByDate = tx.objectStore(iViewTypeByPersonByDate);
 
         docs.forEach(doc => {
           data.add(doc);
@@ -213,12 +213,12 @@
           data.add(doc);
           // Yes, this would be running the actual JS instead of manually rewriting it
           views.add({
-            keyArray: ['created_date', doc.created_date],
+            keyArray: [iViewCreatedDate, doc.created_date],
             _id: doc._id
           });
           views.add({
             // TODO: would keyArray[1] be an array or would it be exploded out?
-            keyArray: ['type_by_person_by_date', [doc.type, doc.created_by, doc.created_date]],
+            keyArray: [iViewTypeByPersonByDate, [doc.type, doc.created_by, doc.created_date]],
             _id: doc._id
           });
         });
@@ -287,20 +287,48 @@
 
     time('warm-native', function() {
       return new Promise(function(resolve, reject) {
-        iNative.transaction(iNativeViewCreatedDate)
-        .objectStore(iNativeViewCreatedDate)
-        .openCursor(window.IDBKeyRange.bound(aDate(), aDate()))
-        .onsuccess = function(event) {
-          var cursor = event.target.result;
-          resolve();
-        };
+        var tx = iNative.transaction(iNative.objectStoreNames);
+        tx.objectStore(iViewCreatedDate)
+          .openCursor(window.IDBKeyRange.lowerBound(Date.parse('2010')))
+          .onsuccess = function(event) {
+            var cursor = event.target.result;
+            console.debug(cursor.value);
+            tx.objectStore(iViewTypeByPersonByDate)
+              .openCursor(window.IDBKeyRange.lowerBound(['foo']))
+              .onsuccess = function(event) {
+                var cursor = event.target.result;
+                console.debug(cursor.value);
+                resolve();
+              };
+          };
       });
     }).then(function(timed) {
       console.log('Warmed Native indexes, took', timed[0], 'millis');
     });
   });
   document.getElementById('indexes-artificial').addEventListener('click', function() {
+    console.log('Warming Artificial indexes');
 
+    time('warm-artificial', function() {
+      return new Promise(function(resolve, reject) {
+        var tx = iArtificial.transaction(iArtificial.objectStoreNames);
+        tx.objectStore(iArtificialView)
+          .openCursor(window.IDBKeyRange.lowerBound([iViewCreatedDate, Date.parse('2010')]))
+          .onsuccess = function(event) {
+            var cursor = event.target.result;
+            console.debug(cursor.value);
+            tx.objectStore(iArtificialView)
+              .openCursor(window.IDBKeyRange.lowerBound([iViewTypeByPersonByDate, ['foo']]))
+              .onsuccess = function(event) {
+                var cursor = event.target.result;
+                console.debug(cursor.value);
+                resolve();
+              };
+          };
+      });
+    }).then(function(timed) {
+      console.log('Warmed Native indexes, took', timed[0], 'millis');
+    });
   });
   document.getElementById('query-pouchdb').addEventListener('click', function() {
     console.log('Querying PouchDB indexes');
