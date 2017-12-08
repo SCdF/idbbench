@@ -8,9 +8,9 @@
   <h1>idbnext benchmarks</h1>
   <p>Benchmarking the difference between current the PouchDB indexeddb backend, "correct" raw indexeddb indexes, and a singular artificial index.</p>
   <p><strong style="color: red">!!!Open the console to see output!!!</strong></p>
-  <h2>Main engine on</h2>
+<!--   <h2>Main engine on</h2>
   <p>Click this first, or click it later to reset everything (NB: refresh first otherwise things break)</p>
-  <button id='bootstrap'>Bootstrap</button>
+  <button id='bootstrap'>Bootstrap</button> -->
   <h2>Generate me some data</h2>
   <div><label for="documents">How many documents? </label><input type="text" id="documents" value=1000></div>
   <button id="generate">Generate</button>
@@ -151,6 +151,8 @@
       });
   }
 
+  bootstrap();
+
   // Nicked from: http://stackoverflow.com/questions/105034/ddg#2117523
   function uuidv4() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -272,7 +274,7 @@
       });
   }
 
-  document.getElementById('bootstrap').addEventListener('click', bootstrap);
+  // document.getElementById('bootstrap').addEventListener('click', bootstrap);
   document.getElementById('generate').addEventListener('click', generate);
   document.getElementById('indexes-pouchdb').addEventListener('click', function() {
     console.log('Warming PouchDB indexes...');
