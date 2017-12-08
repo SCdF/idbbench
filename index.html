@@ -9,7 +9,7 @@
   <p>Benchmarking the difference between current the PouchDB indexeddb backend, "correct" raw indexeddb indexes, and a singular artificial index.</p>
   <p><strong style="color: red">!!!Open the console to see output!!!</strong></p>
   <h2>Generate me some data</h2>
-  <div><label for="documents">How many documents? </label><input type="text" id="documents" value=100000></div>
+  <div><label for="documents">How many documents? </label><input type="text" id="documents" value=1000></div>
   <button id="generate">Generate</button>
   <button id="clear-generate">Clear then generate</button>
   <h2>Generate me some indexes</h2>
@@ -17,21 +17,93 @@
   <div><button id="indexes-native">Native</button></div>
   <div><button id="indexes-artificial">Artificial</button></div>
   <h2>Query me some indexes</h2>
-  <form id="query-indexes">
-    …todo
-  </form>
+  <div><button id="query-pouchdb">Pouchdb</button></div>
+  <div><button id="query-native">Native</button></div>
+  <div><button id="query-artificial">Artificial</button></div>
 <script src="//cdn.jsdelivr.net/npm/pouchdb@6.3.4/dist/pouchdb.min.js"></script>
 </script>
 <script>
   /* jshint browser: true */
+  var IndexedDB = window.indexedDB;
 
-  var db;
+
+  var db, iNative, iArtificial;
+  var IDB_NATIVE_NAME = 'idbnext-native';
+  var IDB_ARTIFICIAL_NAME = 'idbnext-artificial';
 
   function bootstrap() {
-    console.log('Initialising PouchDB DB');
+    console.log('Initialising Databases...');
     db = new PouchDB('idbnext-bm');
-    return db.destroy().then(function() {
+    return db.destroy()
+    .then(function() {
       db = new PouchDB('idbnext-bm');
+      return db.put({
+        _id: '_design/idbnext',
+        views: {
+          created_date: {
+            map: 'function(doc) { emit(doc.created_date); }'
+          },
+          type_by_person_by_date: {
+            map: 'function(doc) { emit([doc.type, doc.created_by, doc.created_date]); }'
+          }
+        }
+      });
+    }).then(function() {
+      console.log('PouchDB initialised!');
+      return new Promise(function(resolve, reject) {
+        IndexedDB.deleteDatabase(IDB_NATIVE_NAME);
+        IndexedDB.deleteDatabase(IDB_ARTIFICIAL_NAME);
+
+        var native = IndexedDB.open(IDB_NATIVE_NAME, 1);
+        var artificial = IndexedDB.open(IDB_ARTIFICIAL_NAME, 1);
+
+        var nativeDone = false;
+        var artificialDone = false;
+
+        native.onerror = function(event) {
+          reject(event);
+        };
+        artificial.onerror = function(event) {
+          reject(event);
+        };
+
+        native.onsuccess = function(event) {
+          console.log('Native-Index IDB initialised!');
+          iNative = native.result;
+          if (artificialDone) {
+            resolve();
+          }
+        }
+        artificial.onsuccess = function(event) {
+          console.log('Native-Index IDB initialised!');
+          iNative = native.result;
+          if (artificialDone) {
+            resolve();
+          }
+        }
+
+        var schema = function(event) {
+          var db = event.target.result;
+        };
+
+        // TODO: work out the Chrome 30 version of this?
+        native.onupgradeneeded = function(event) {
+          var idb = event.target.result;
+          var rawData = idb.createObjectStore('data', { keyPath: '_id' });
+          // I realise IRL these keyPaths would be not be named so nicely, and would be generated based on
+          // what is emited from views.
+          var createdDateView = idb.createObjectStore('view__created_date', { keyPath: 'created_date' });
+          var typeByPersonByDateView = idb.createObjectStore('view__type_by_person_by_date', { keyPath: ['type', 'created_by', 'created_date']});
+        };
+        artificial.onupgradeneeded = function(event) {
+          var idb = event.target.result;
+          var rawData = idb.createObjectStore('data', { keyPath: '_id' });
+          // I realise IRL these keyPaths would be not be named so nicely, and would be generated based on
+          // what is emited from views.
+          var createdDateView = idb.createObjectStore('view__created_date', { keyPath: 'created_date' });
+          var typeByPersonByDateView = idb.createObjectStore('view__type_by_person_by_date', { keyPath: ['type', 'created_by', 'created_date']});
+        };
+      });
     });
   }
 
@@ -90,10 +162,48 @@
       });
   }
 
+  function time(fnToTime) {
+    var before = new Date().getTime();
+    var result = fnToTime();
+    if (result.then) {
+      return result.then(function(result) {
+        var t = new Date().getTime() - before;
+        return [t, result];
+      });
+    } else {
+      var t = new Date().getTime() - before;
+      return [t, result];
+    }
+  }
+
   document.getElementById('clear-generate').addEventListener('click', function() {
     bootstrap().then(generate);
   });
   document.getElementById('generate').addEventListener('click', generate);
+  document.getElementById('indexes-pouchdb').addEventListener('click', function() {
+    console.log('Warming PouchDB indexes...');
+
+    time(function() {return db.query('idbnext/created_date', {limit: 1});})
+      .then(function(timed) {
+        console.log('Warmed PouchDB indexes, took', timed[0], 'millis');
+      });
+  });
+  document.getElementById('indexes-native').addEventListener('click', function() {
+
+  });
+  document.getElementById('indexes-artificial').addEventListener('click', function() {
+
+  });
+  document.getElementById('query-pouchdb').addEventListener('click', function() {
+    console.log('Querying PouchDB indexes');
+
+  });
+  document.getElementById('query-native').addEventListener('click', function() {
+
+  });
+  document.getElementById('query-artificial').addEventListener('click', function() {
+
+  });
 </script>
 </body>
 </html>
