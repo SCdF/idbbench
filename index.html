@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>idbnext benchmarking</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+</head>
+<body>
+  <h1>idbnext benchmarks</h1>
+  <p>Benchmarking the difference between current the PouchDB indexeddb backend, "correct" raw indexeddb indexes, and a singular artificial index.</p>
+  <p><strong style="color: red">!!!Open the console to see output!!!</strong></p>
+  <h2>Generate me some data</h2>
+  <div><label for="documents">How many documents? </label><input type="text" id="documents" value=100000></div>
+  <button id="generate">Generate</button>
+  <button id="clear-generate">Clear then generate</button>
+  <h2>Generate me some indexes</h2>
+  <div><button id="indexes-pouchdb">Pouchdb</button></div>
+  <div><button id="indexes-native">Native</button></div>
+  <div><button id="indexes-artificial">Artificial</button></div>
+  <h2>Query me some indexes</h2>
+  <form id="query-indexes">
+    …todo
+  </form>
+<script src="//cdn.jsdelivr.net/npm/pouchdb@6.3.4/dist/pouchdb.min.js"></script>
+</script>
+<script>
+  /* jshint browser: true */
+  function bootstrap() {
+    console.log('Initialising PouchDB DB');
+    db = new PouchDB('idbnext-bm');
+    return db.destroy();
+  }
+
+  function oneOf(things) {
+    return things[Math.floor(Math.random() * things.length)];
+  }
+
+  function between(start, end) {
+    return start + Math.random() * (end - start);
+  }
+
+  function generate() {
+    db = new PouchDB('idbnext-bm');
+    var store = function(docs, total) {
+      return db.bulkDocs(docs)
+      .then(function() {
+        console.log('Generated', total);
+      })
+      .catch(function(err) {
+        console.error('Failed to generate', total);
+        console.error(err);
+      })
+    }
+
+    var docsToGenerate = document.getElementById('documents').value;
+
+    var BATCH_SIZE = 100;
+    var docs = [];
+    var total = 0;
+    for (var i = 0; i < docsToGenerate; i++) {
+      total += 1;
+      docs.push({
+        type: oneOf(['foo', 'bar', 'smang']),
+        created_date: Math.floor(between(Date.parse('2000'), Date.parse('2017'))),
+        created_by: 'person:' + Math.floor(between(0, 1000)),
+        a_boolean: oneOf([true, false, null, undefined]),
+      });
+
+      if (docs.length === BATCH_SIZE) {
+        store(docs, total);
+        docs = [];
+      }
+    }
+    store(docs, total)
+      .then(function() {
+        return db.info();
+      })
+      .then(function(info) {
+        console.log('GENERATION COMPLETE');
+        console.log('Total Docs:', info);
+      })
+      .catch(function(err) {
+        console.error('Failed to info');
+        console.error(err);
+      });
+  }
+
+  document.getElementById('clear-generate').addEventListener('click', function() {
+    bootstrap().then(generate);
+  });
+  document.getElementById('generate').addEventListener('click', generate);
+</script>
+</body>
+</html>
