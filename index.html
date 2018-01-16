@@ -21,6 +21,7 @@
   <p><strong style="color: red">!!!Open the console to see output!!!</strong></p>
   <h2>1. Main engine on</h2>
   <p>Click this first, or click it later to reset everything (NB: refresh first otherwise things break)</p>
+  <div><label for="numIndexes">How many views / indexes? </label><input type="text" id="numIndexes" value="5"></div>
   <button id='bootstrap'>Bootstrap</button>
   <h2>2. Generate me some data</h2>
   <div><label for="documents">How many documents? </label><input type="text" id="documents" value=1000></div>
@@ -112,24 +113,111 @@
     return Math.floor(between(Date.parse('2000'), Date.parse('2017')));
   }
 
+  function aView(exampleDocument) {
+    var numKeys = between(1, 3);
+    var key = [];
+
+    for (var i = 0; i < numKeys; i++) {
+      key.push(oneOf(Object.keys(exampleDocument)));
+    }
+
+    var view = [
+      'function(doc) {',
+      'emit(',
+    ];
+
+    if (key.length === 1) {
+      view.push('doc.' + key);
+    } else {
+      view.push('[');
+      view = view.concat(
+        key.map(function(k) {return 'doc.' + k;}).join(', ')
+      );
+      view.push(']');
+    }
+
+    view.push(');}');
+
+    var viewFromKey = function(key) {
+      return 'view__' + key.join('.');
+    };
+
+    return {
+      viewCreate: view.join(' '),
+      viewQuery: function(db) {
+        // TODO: ???
+      },
+      nativeCreate: function(idb) {
+        var view = idb.createObjectStore(viewFromKey(key), {autoIncrement: true});
+        view.createIndex('id', '_id');
+        view.createIndex(viewFromKey(key), (key.length === 1 ? key[0] : key), {unique: false});
+      },
+      nativePut: function(tx, doc) {
+        var data = key.concat('_id').reduce(function(sum, value) {
+          sum.value = doc[value];
+          return sum;
+        }, {});
+
+        tx.objectStore(viewFromKey(key)).add(data);
+      },
+      nativeQuery: function(db) {
+        // TODO: ???
+      },
+      artificialPut: function(view, doc) {
+        var data = key.reduce(function(sum, value) {
+          sum.push(doc[value]);
+          return sum;
+        }, []);
+
+        view.add({
+          keyArray: [viewFromKey(key), data],
+          _id: doc._id
+        });
+      },
+      artificialQuery: function(db) {
+        // TODO: ???
+      }
+    };
+  }
+
+  function coreDocument() {
+    return {
+      _id: uuidv4(),
+      type: oneOf(['foo', 'bar', 'smang']),
+      created_date: aDate(),
+      created_by: 'person:' + Math.floor(between(0, 1000)),
+      a_boolean: oneOf([true, false, null, undefined]),
+    };
+  }
+
   // TODO: implement arbitary numbers of indexes to stress the system properly, default 10
   function bootstrap() {
     console.log('Boostrapping databases...');
+
     times = {};
+
+    var numIndexes = document.getElementById('numIndexes').value;
+    indexes = [];
+    for (var i = 0; i < numIndexes; i++) {
+      indexes.push(aView(coreDocument()));
+    }
+
     db = new PouchDB(POUCHDB_NAME);
     return db.destroy()
     .then(function() {
       db = new PouchDB(POUCHDB_NAME);
+      var views = {};
+      indexes.forEach(function(i, idx) {
+        views['view__'+idx] = {
+          map: i.viewCreate
+        };
+      });
+
+      console.log(views);
+
       return db.put({
         _id: '_design/idbnext',
-        views: {
-          created_date: {
-            map: 'function(doc) { emit(doc.created_date); }'
-          },
-          type_by_person_by_date: {
-            map: 'function(doc) { emit([doc.type, doc.created_by, doc.created_date]); }'
-          }
-        }
+        views: views
       });
     }).then(function() {
       console.log('PouchDB initialised!');
@@ -268,13 +356,7 @@
     var total = 0;
     for (var i = 0; i < docsToGenerate; i++) {
       total += 1;
-      docs.push({
-        _id: uuidv4(),
-        type: oneOf(['foo', 'bar', 'smang']),
-        created_date: aDate(),
-        created_by: 'person:' + Math.floor(between(0, 1000)),
-        a_boolean: oneOf([true, false, null, undefined]),
-      });
+      docs.push(coreDocument());
 
       if (docs.length === BATCH_SIZE) {
         store(docs, total);
