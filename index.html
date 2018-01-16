@@ -3,33 +3,44 @@
 <head>
   <title>idbnext benchmarking</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <style type="text/css">
+    button {
+      /*font-size: 100%;*/
+      padding: 0.5em 1em;
+      margin: 0.5em 1em;
+      margin-left: 0;
+    }
+    input {
+      margin: 0.5em 1em;
+    }
+  </style>
 </head>
 <body>
   <h1>idbnext benchmarks</h1>
   <p>Benchmarking the difference between current the PouchDB indexeddb backend, "correct" raw indexeddb indexes, and a singular artificial index.</p>
   <p><strong style="color: red">!!!Open the console to see output!!!</strong></p>
-  <h2>Main engine on</h2>
+  <h2>1. Main engine on</h2>
   <p>Click this first, or click it later to reset everything (NB: refresh first otherwise things break)</p>
   <button id='bootstrap'>Bootstrap</button>
-  <h2>Generate me some data</h2>
+  <h2>2. Generate me some data</h2>
   <div><label for="documents">How many documents? </label><input type="text" id="documents" value=1000></div>
   <button id="generate">Generate</button>
-  <h2>Warm me some indexes</h2>
+  <h2>3. Warm me some indexes</h2>
   <div>
     <button id="indexes-pouchdb">Pouchdb</button>
     <button id="indexes-native">Native</button>
     <button id="indexes-artificial">Artificial</button>
   </div>
-  <h2>Query me some indexes</h2>
+  <h2>4. Query me some indexes</h2>
   <div>
     <button id="query-pouchdb">Pouchdb</button>
     <button id="query-native">Native</button>
     <button id="query-artificial">Artificial</button>
   </div>
-  <h2>Look at me timings</h2>
+  <h2>5. Look at me timings</h2>
   <div><button id="dump-timings">Dump Timings</button></div>
   <br/><br/>
-  <div><button id="reset-timings">!!!Reset Timings!!!</button></div>
+  <div><button id="reset-timings" style="font-weight: bold">!!!Reset Timings!!!</button></div>
 <script src="//cdn.jsdelivr.net/npm/pouchdb@6.3.4/dist/pouchdb.min.js"></script>
 </script>
 <script>
@@ -47,6 +58,8 @@
   window.IDBTransaction = window.IDBTransaction || window.webkitIDBTransaction || window.msIDBTransaction || {READ_WRITE: "readwrite"}; // This line should only be needed if it is needed to support the object's constants for older browsers
   window.IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange || window.msIDBKeyRange;
   // (Mozilla has never prefixed these objects, so we don't need window.mozIDB*)
+  // MOZ MOZ MOZ MOZ MOZ MOZ MOZ
+  // MOZ MOZ MOZ MOZ MOZ MOZ MOZ
 
   var POUCHDB_NAME = 'idbnext';
   var IDB_NATIVE_NAME = 'idbnext-native';
@@ -79,6 +92,26 @@
   }
   var times = {};
 
+  // Nicked from: http://stackoverflow.com/questions/105034/ddg#2117523
+  function uuidv4() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  function oneOf(things) {
+    return things[Math.floor(Math.random() * things.length)];
+  }
+
+  function between(start, end) {
+    return start + Math.random() * (end - start);
+  }
+
+  function aDate() {
+    return Math.floor(between(Date.parse('2000'), Date.parse('2017')));
+  }
+
   // TODO: implement arbitary numbers of indexes to stress the system properly, default 10
   function bootstrap() {
     console.log('Boostrapping databases...');
@@ -101,18 +134,7 @@
     }).then(function() {
       console.log('PouchDB initialised!');
 
-      // TODO: this doesn't work more than once, probably because there are references held open to DBs
       return new Promise(function(resolve, reject) {
-        // var closeDb = function(db) {
-        //   return new Promise(resolve, reject) {
-        //     if (!db) {
-        //       resolve();
-        //     }
-
-        //     db.
-        //   }
-        // }
-
         if (iNative) iNative.close();
         var req = window.indexedDB.deleteDatabase(IDB_NATIVE_NAME);
         req.onerror = reject;
@@ -172,26 +194,6 @@
         }));
       });
   }
-
-  // Nicked from: http://stackoverflow.com/questions/105034/ddg#2117523
-  function uuidv4() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
-  }
-
-  function oneOf(things) {
-    return things[Math.floor(Math.random() * things.length)];
-  }
-
-  function between(start, end) {
-    return start + Math.random() * (end - start);
-  }
-
-  function aDate() {
-    return Math.floor(between(Date.parse('2000'), Date.parse('2017')));
-  };
 
   function generate() {
     var store = function(docs, total) {
@@ -315,7 +317,7 @@
             };
         };
     });
-  }
+  };
 
   var queryArtificial = function() {
     return new Promise(function(resolve, reject) {
