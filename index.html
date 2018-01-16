@@ -156,7 +156,7 @@
       },
       nativePut: function(tx, doc) {
         var data = key.concat('_id').reduce(function(sum, value) {
-          sum.value = doc[value];
+          sum[value] = doc[value];
           return sum;
         }, {});
 
@@ -286,22 +286,11 @@
         // Native
         var tx = iNative.transaction(iNative.objectStoreNames, "readwrite"); // TODO: maybe old style readwrite?
 
-        var data = tx.objectStore(iNativeData),
-            viewCreatedDate = tx.objectStore(iViewCreatedDate),
-            viewTypeByPersonByDate = tx.objectStore(iViewTypeByPersonByDate);
-
-        docs.forEach(doc => {
+        var data = tx.objectStore(iNativeData);
+        docs.forEach(function(doc) {
           data.add(doc);
-          // Yes, this would be running the actual JS instead of manually rewriting it
-          viewCreatedDate.add({
-            created_date: doc.created_date,
-            _id: doc._id
-          });
-          viewTypeByPersonByDate.add({
-            type: doc.type,
-            created_by: doc.created_by,
-            created_date: doc.created_date,
-            _id: doc._id
+          indexes.forEach(function(i) {
+            i.nativePut(tx, doc);
           });
         });
 
