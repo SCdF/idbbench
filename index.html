@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- TODO Add a jshint for that that caps at old js? -->
 <html>
 <head>
   <title>idbnext benchmarking</title>
@@ -73,6 +74,7 @@
   var iViewTypeByPersonByDate = 'view__type_by_person_by_date';
   var iArtificialData = 'data';
   var iArtificialView = 'view';
+  var indexes = [];
 
   // Total time measurements
   // TODO: implement last 100 rolling average, mean, min, max
@@ -233,16 +235,10 @@
           native.onupgradeneeded = function(event) {
             var idb = event.target.result;
             idb.createObjectStore(iNativeData, { keyPath: '_id' });
-            // I realise IRL these keyPaths would be not be named so nicely, and would be generated based on
-            // what is emited from views.
-            // NB: _id indexes aren't used in the bench, but are needed by pouch so when data
-            //     changes you can find existing view entries and remove them
-            var os1 = idb.createObjectStore(iViewCreatedDate, {autoIncrement: true});
-            os1.createIndex('id', '_id');
-            os1.createIndex(iViewCreatedDate, 'created_date', {unique: false});
-            var os2 = idb.createObjectStore(iViewTypeByPersonByDate, {autoIncrement: true});
-            os2.createIndex('id', '_id');
-            os2.createIndex(iViewTypeByPersonByDate, ['type', 'created_by', 'created_date'], {unique: false});
+
+            indexes.forEach(function(i) {
+              i.nativeCreate(idb);
+            });
           };
 
           native.onsuccess = function(event) {
@@ -255,6 +251,7 @@
         };
       }).then(new Promise(function(resolve, reject) {
         // TODO: if open then close
+        // TODO: ^^ I have no idea what this means?
         if (iArtificial) iArtificial.close();
         var req = window.indexedDB.deleteDatabase(IDB_ARTIFICIAL_NAME);
         req.onerror = reject;
@@ -277,10 +274,9 @@
           };
 
           artificial.onerror = reject;
-
         };
-        }));
-      });
+      }));
+    });
   }
 
   function generate() {
