@@ -140,19 +140,18 @@
 
     view.push(');}');
 
-    var viewFromKey = function(key) {
-      return 'view__' + key.join('.');
-    };
+    var viewName = 'view__' + key.join('.');
 
     return {
+      viewName: viewName,
       viewCreate: view.join(' '),
-      viewQuery: function(db) {
-        // TODO: ???
+      viewQuery: function() {
+        return db.query('idbnext/' + viewName, {limit: 1});
       },
       nativeCreate: function(idb) {
-        var view = idb.createObjectStore(viewFromKey(key), {autoIncrement: true});
+        var view = idb.createObjectStore(viewName, {autoIncrement: true});
         view.createIndex('id', '_id');
-        view.createIndex(viewFromKey(key), (key.length === 1 ? key[0] : key), {unique: false});
+        view.createIndex(viewName, (key.length === 1 ? key[0] : key), {unique: false});
       },
       nativePut: function(tx, doc) {
         var data = key.concat('_id').reduce(function(sum, value) {
@@ -160,10 +159,20 @@
           return sum;
         }, {});
 
-        tx.objectStore(viewFromKey(key)).add(data);
+        tx.objectStore(viewName).add(data);
       },
       nativeQuery: function(db) {
-        // TODO: ???
+        return new Promise(function(resolve, reject) {
+          var kkey = viewName;
+          db.transaction(kkey)
+            .objectStore(kkey)
+            .index(kkey)
+            .openCursor()
+            .onsuccess = function(event) {
+              // console.log(event.target.result.value);
+              resolve();
+            };
+        });
       },
       artificialPut: function(view, doc) {
         var data = key.reduce(function(sum, value) {
@@ -172,12 +181,22 @@
         }, []);
 
         view.add({
-          keyArray: [viewFromKey(key), data],
+          keyArray: [viewName, data],
           _id: doc._id
         });
       },
       artificialQuery: function(db) {
-        // TODO: ???
+        return new Promise(function(resolve, reject) {
+          var kkey = viewName;
+          db.transaction(iArtificialView)
+            .objectStore(iArtificialView)
+            .index(iArtificialView)
+            .openCursor()
+            .onsuccess = function(event) {
+              // console.log(event.target.result.value);
+              resolve();
+            };
+        });
       }
     };
   }
@@ -210,7 +229,7 @@
       db = new PouchDB(POUCHDB_NAME);
       var views = {};
       indexes.forEach(function(i, idx) {
-        views['view__'+idx] = {
+        views[i.viewName] = {
           map: i.viewCreate
         };
       });
@@ -250,8 +269,6 @@
           native.onerror = reject;
         };
       }).then(new Promise(function(resolve, reject) {
-        // TODO: if open then close
-        // TODO: ^^ I have no idea what this means?
         if (iArtificial) iArtificial.close();
         var req = window.indexedDB.deleteDatabase(IDB_ARTIFICIAL_NAME);
         req.onerror = reject;
@@ -304,19 +321,12 @@
         var tx = iArtificial.transaction(iArtificial.objectStoreNames, "readwrite"); // TODO: maybe old style readwrite?
 
         var data = tx.objectStore(iArtificialData),
-            views = tx.objectStore(iArtificialView);
+            view = tx.objectStore(iArtificialView);
 
         docs.forEach(doc => {
           data.add(doc);
-          // Yes, this would be running the actual JS instead of manually rewriting it
-          views.add({
-            keyArray: [iViewCreatedDate, doc.created_date],
-            _id: doc._id
-          });
-          views.add({
-            // TODO: would keyArray[1] be an array or would it be exploded out?
-            keyArray: [iViewTypeByPersonByDate, [doc.type, doc.created_by, doc.created_date]],
-            _id: doc._id
+          indexes.forEach(function(i) {
+            i.artificialPut(view, doc);
           });
         });
 
@@ -366,51 +376,17 @@
   document.getElementById('bootstrap').addEventListener('click', bootstrap);
   document.getElementById('generate').addEventListener('click', generate);
   var queryNative = function() {
-    return new Promise(function(resolve, reject) {
-      var tx = iNative.transaction(iNative.objectStoreNames);
-      tx.objectStore(iViewCreatedDate)
-        .index(iViewCreatedDate)
-        .openCursor(window.IDBKeyRange.lowerBound(Date.parse('2010')))
-        .onsuccess = function(event) {
-          var cursor = event.target.result;
-          console.debug(cursor.value);
-          tx.objectStore(iViewTypeByPersonByDate)
-            .index(iViewTypeByPersonByDate)
-            .openCursor(window.IDBKeyRange.lowerBound(['foo']))
-            .onsuccess = function(event) {
-              var cursor = event.target.result;
-              console.debug(cursor.value);
-              resolve();
-            };
-        };
-    });
+    return oneOf(indexes).nativeQuery(iNative);
   };
 
   var queryArtificial = function() {
-    return new Promise(function(resolve, reject) {
-      var tx = iArtificial.transaction(iArtificial.objectStoreNames);
-      tx.objectStore(iArtificialView)
-        .index(iArtificialView)
-        .openCursor(window.IDBKeyRange.lowerBound([iViewCreatedDate, Date.parse('2010')]))
-        .onsuccess = function(event) {
-          var cursor = event.target.result;
-          console.debug(cursor.value);
-          tx.objectStore(iArtificialView)
-            .index(iArtificialView)
-            .openCursor(window.IDBKeyRange.lowerBound([iViewTypeByPersonByDate, ['foo']]))
-            .onsuccess = function(event) {
-              var cursor = event.target.result;
-              console.debug(cursor.value);
-              resolve();
-            };
-        };
-    });
+    return oneOf(indexes).artificialQuery(iArtificial);
   };
 
   document.getElementById('indexes-pouchdb').addEventListener('click', function() {
     console.log('Warming PouchDB indexes...');
 
-    time('warm-pouchdb', function() {return db.query('idbnext/created_date', {limit: 1});})
+    time('warm-pouchdb', function() {return oneOf(indexes).viewQuery();})
       .then(function(timed) {
         console.log('Warmed PouchDB indexes, took', timed[0], 'millis');
       });
@@ -431,7 +407,7 @@
     });
   });
   document.getElementById('query-pouchdb').addEventListener('click', function() {
-    time('query-pouchdb', function() {return db.query('idbnext/created_date', {limit: 1});})
+    time('query-pouchdb', function() {return oneOf(indexes).viewQuery();})
       .then(function(timed) {
         console.log('Queried PouchDB indexes, took', timed[0], 'millis');
       });
