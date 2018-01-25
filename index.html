@@ -115,13 +115,25 @@
     return Math.floor(between(Date.parse('2000'), Date.parse('2017')));
   }
 
-  function aView(exampleDocument) {
-    var numKeys = between(1, 3);
-    var key = [];
+  function aView(exampleDocument, existingViewNames) {
+    var key;
+    var viewName;
+    var escape = 100;
+    do {
+      escape -= 1;
+      if (escape === 0) {
+        throw Error('Could not generate enough unique view keys from exampleDocument.');
+      }
 
-    for (var i = 0; i < numKeys; i++) {
-      key.push(oneOf(Object.keys(exampleDocument)));
-    }
+      key = [];
+      var numKeys = between(1, 3);
+      for (var i = 0; i < numKeys; i++) {
+        key.push(oneOf(Object.keys(exampleDocument)));
+      }
+
+      viewName = 'view__' + key.join('.');
+    } while (existingViewNames.indexOf(viewName) !== -1);
+    console.log('Going to use', viewName);
 
     var view = [
       'function(doc) {',
@@ -139,8 +151,6 @@
     }
 
     view.push(');}');
-
-    var viewName = 'view__' + key.join('.');
 
     return {
       viewName: viewName,
@@ -181,7 +191,7 @@
         }, []);
 
         view.add({
-          keyArray: [viewName, data],
+          keyArray: [viewName].concat(data),
           _id: doc._id
         });
       },
@@ -191,7 +201,7 @@
           db.transaction(iArtificialView)
             .objectStore(iArtificialView)
             .index(iArtificialView)
-            .openCursor()
+            .openCursor(IDBKeyRange.bound([kkey], [kkey, []]))
             .onsuccess = function(event) {
               // console.log(event.target.result.value);
               resolve();
@@ -211,7 +221,6 @@
     };
   }
 
-  // TODO: implement arbitary numbers of indexes to stress the system properly, default 10
   function bootstrap() {
     console.log('Boostrapping databases...');
 
@@ -220,7 +229,7 @@
     var numIndexes = document.getElementById('numIndexes').value;
     indexes = [];
     for (var i = 0; i < numIndexes; i++) {
-      indexes.push(aView(coreDocument()));
+      indexes.push(aView(coreDocument(), indexes.map(function(i) {return i.viewName;})));
     }
 
     db = new PouchDB(POUCHDB_NAME);
@@ -233,8 +242,6 @@
           map: i.viewCreate
         };
       });
-
-      console.log(views);
 
       return db.put({
         _id: '_design/idbnext',
@@ -414,12 +421,12 @@
   });
   document.getElementById('query-native').addEventListener('click', function() {
     time('query-native', queryNative).then(function(timed) {
-      console.log('Warmed Native indexes, took', timed[0], 'millis');
+      console.log('Queried Native indexes, took', timed[0], 'millis');
     });
   });
   document.getElementById('query-artificial').addEventListener('click', function() {
     time('query-artificial', queryArtificial).then(function(timed) {
-      console.log('Warmed Native indexes, took', timed[0], 'millis');
+      console.log('Queried Native indexes, took', timed[0], 'millis');
     });
   });
   document.getElementById('dump-timings').addEventListener('click', function() {
