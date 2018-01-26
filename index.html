@@ -30,8 +30,8 @@
   <h2>3. Warm me some indexes</h2>
   <div>
     <button id="indexes-pouchdb">Pouchdb</button>
-    <button id="indexes-native">Native</button>
-    <button id="indexes-artificial">Artificial</button>
+<!--     <button id="indexes-native">Native</button>
+    <button id="indexes-artificial">Artificial</button> -->
   </div>
   <h2>4. Query me some indexes</h2>
   <div>
@@ -222,8 +222,6 @@
   }
 
   function bootstrap() {
-    console.log('Boostrapping databases...');
-
     times = {};
 
     var numIndexes = document.getElementById('numIndexes').value;
@@ -380,8 +378,14 @@
       });
   }
 
-  document.getElementById('bootstrap').addEventListener('click', bootstrap);
-  document.getElementById('generate').addEventListener('click', generate);
+  document.getElementById('bootstrap').addEventListener('click', function() {
+    console.log('Bootstrapping');
+    bootstrap();
+  });
+  document.getElementById('generate').addEventListener('click', function() {
+    console.log('Generating');
+    generate();
+  });
   var queryNative = function() {
     return oneOf(indexes).nativeQuery(iNative);
   };
@@ -393,38 +397,54 @@
   document.getElementById('indexes-pouchdb').addEventListener('click', function() {
     console.log('Warming PouchDB indexes...');
 
-    time('warm-pouchdb', function() {return oneOf(indexes).viewQuery();})
-      .then(function(timed) {
-        console.log('Warmed PouchDB indexes, took', timed[0], 'millis');
+    time('warm-pouchdb', function() {
+      var chain = Promise.resolve();
+      indexes.forEach(function(i) {
+        chain = chain.then(function() {
+          console.log('Warming', i.viewName);
+          return i.viewQuery();
+        });
       });
-  });
 
-  document.getElementById('indexes-native').addEventListener('click', function() {
-    console.log('Warming Native indexes');
-
-    time('warm-native', queryNative).then(function(timed) {
-      console.log('Warmed Native indexes, took', timed[0], 'millis');
+      return chain;
+    })
+    .then(function(timed) {
+      console.log('Warmed PouchDB indexes, took', timed[0], 'millis');
     });
   });
-  document.getElementById('indexes-artificial').addEventListener('click', function() {
-    console.log('Warming Artificial indexes');
 
-    time('warm-artificial', queryArtificial).then(function(timed) {
-      console.log('Warmed Native indexes, took', timed[0], 'millis');
-    });
-  });
+  // document.getElementById('indexes-native').addEventListener('click', function() {
+  //   console.log('Warming Native indexes');
+
+  //   time('warm-native', queryNative).then(function(timed) {
+  //     console.log('Warmed Native indexes, took', timed[0], 'millis');
+  //   });
+  // });
+  // document.getElementById('indexes-artificial').addEventListener('click', function() {
+  //   console.log('Warming Artificial indexes');
+
+  //   time('warm-artificial', queryArtificial).then(function(timed) {
+  //     console.log('Warmed Native indexes, took', timed[0], 'millis');
+  //   });
+  // });
   document.getElementById('query-pouchdb').addEventListener('click', function() {
+    console.log('Querying random PouchDB view');
+
     time('query-pouchdb', function() {return oneOf(indexes).viewQuery();})
       .then(function(timed) {
         console.log('Queried PouchDB indexes, took', timed[0], 'millis');
       });
   });
   document.getElementById('query-native').addEventListener('click', function() {
+    console.log('Querying random native index');
+
     time('query-native', queryNative).then(function(timed) {
       console.log('Queried Native indexes, took', timed[0], 'millis');
     });
   });
   document.getElementById('query-artificial').addEventListener('click', function() {
+    console.log('Querying random artificial index');
+
     time('query-artificial', queryArtificial).then(function(timed) {
       console.log('Queried Native indexes, took', timed[0], 'millis');
     });
