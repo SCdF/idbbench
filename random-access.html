@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Random access performance</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <style type="text/css">
+    button {
+      /*font-size: 100%;*/
+      padding: 0.5em 1em;
+      margin: 0.5em 1em;
+      margin-left: 0;
+    }
+    input {
+      margin: 0.5em 1em;
+    }
+  </style>
+</head>
+<body>
+  <h1>Random access performance</h1>
+  <h2>Config</h2>
+  <div><label for="totalDocs">How many total docs? </label><input type="text" id="totalDocs" value="10000"></div>
+  <div><label for="queryDocs ">How many documents to query for? </label><input type="text" id="queryDocs" value="5000"></div>
+  <p>NB: output will be in the console</p>
+  <div><button id="go">Go</button></div>
+<script type="text/javascript">
+  /* jshint browser: true */
+
+  // MOZ MOZ MOZ MOZ MOZ MOZ MOZ
+  // MOZ MOZ MOZ MOZ MOZ MOZ MOZ
+  //  The next bit is from MDN
+  // MOZ MOZ MOZ MOZ MOZ MOZ MOZ
+  // MOZ MOZ MOZ MOZ MOZ MOZ MOZ
+  // In the following line, you should include the prefixes of implementations you want to test.
+  window.indexedDB = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB || window.msIndexedDB;
+  // DON'T use "var indexedDB = ..." if you're not in a function.
+  // Moreover, you may need references to some window.IDB* objects:
+  window.IDBTransaction = window.IDBTransaction || window.webkitIDBTransaction || window.msIDBTransaction || {READ_WRITE: "readwrite"}; // This line should only be needed if it is needed to support the object's constants for older browsers
+  window.IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange || window.msIDBKeyRange;
+  // (Mozilla has never prefixed these objects, so we don't need window.mozIDB*)
+  // MOZ MOZ MOZ MOZ MOZ MOZ MOZ
+  // MOZ MOZ MOZ MOZ MOZ MOZ MOZ
+
+  /**
+   * Shuffles array in place.
+   * @param {Array} a items An array containing the items.
+   */
+   // https://stackoverflow.com/a/6274381/1666
+  function shuffle(a) {
+      var j, x, i;
+      for (i = a.length - 1; i > 0; i--) {
+          j = Math.floor(Math.random() * (i + 1));
+          x = a[i];
+          a[i] = a[j];
+          a[j] = x;
+      }
+  }
+
+  function log(title, fn) {
+    var before = new Date().getTime();
+    console.log(title);
+    var res = fn();
+    if (!res || !res.then) {
+      res = Promise.resolve(res);
+    }
+
+    return res.then(function() {
+      var after = new Date().getTime();
+      console.log('Finished:', (after - before), 'millis');
+    });
+  }
+
+  var testDb;
+
+  document.getElementById('go').addEventListener('click', function() {
+    var total = document.getElementById('totalDocs').value,
+        query = document.getElementById('queryDocs').value;
+
+    if (testDb) testDb.close();
+    var db = window.indexedDB.open('testDb', 1);
+
+    db.onupgradeneeded = function(event) {
+      console.log('Bootstrapping...');
+      var idb = event.target.result;
+      idb.createObjectStore('testDb', { keyPath: 'id'});
+    };
+
+    db.onsuccess = function(event) {
+      var store,
+          data,
+          subset;
+
+      Promise.resolve()
+      .then(function() {
+        return log('Initialising data...', function() {
+          testDb = event.target.result;
+          var tx = testDb.transaction(['testDb'], 'readwrite');
+          store = tx.objectStore('testDb');
+          data = [];
+          for (i = 0; i < total; i++) {
+            data.push('doc-' + i);
+          }
+
+          data.forEach(function(datum) {
+            store.add({id: datum});
+          });
+        });
+      })
+      .then(function() {
+        return log('Shuffling and picking', function() {
+          shuffle(data);
+          subset = data.slice(0, query);
+        });
+      })
+      .then(function() {
+        return log('Reading with existing readwrite transaction', function() {
+          var result = subset.map(function(d) {
+            return store.get(d);
+          });
+        });
+      });
+    };
+  });
+</script>
+</body>
+</html>
