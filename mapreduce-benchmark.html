@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>mapreduce old vs. new</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <style type="text/css">
+    button {
+      /*font-size: 100%;*/
+      padding: 0.5em 1em;
+      margin: 0.5em 1em;
+      margin-left: 0;
+    }
+    input {
+      margin: 0.5em 1em;
+    }
+  </style>
+</head>
+<body>
+  <h1>mapreduce old vs. new</h1>
+  <p></p>
+  <p><strong style="color: red">!!!Open the console to see output!!!</strong></p>
+  <button id='go'>Go</button>
+<script src="./pouchdb-next.js"></script>
+</script>
+<script>
+var ddoc = {
+  _id: '_design/test',
+  views: {
+    foo: {
+      map: 'function(doc) {emit(doc.foo);}'
+    }
+  }
+}
+
+function oneOf(things) {
+  return things[Math.floor(Math.random() * things.length)];
+}
+
+var randomDoc = function() {
+  return {
+    foo: oneOf(['foo', 'bar', 'smang', 'baz', 'smaz', 'craz', 'daz', 'plaz'])
+  }
+}
+
+function go() {
+  console.log('Starting');
+
+  var idb = new PouchDB('mr-idb', {adapter: 'idb'});
+  var indexeddb = new PouchDB('mr-indexeddb', {adapter: 'indexeddb'});
+
+  var idbInsert = {val: 0};
+  var indexeddbInsert = {val: 0};
+
+  var idbView = {val: 0};
+  var indexeddbView = {val: 0};
+
+  var insert = function(db, docs, counter) {
+    var before = new Date().getTime();
+
+    return db.bulkDocs(docs)
+      .then(function() {
+        var after = new Date().getTime();
+        counter.val = counter.val + (after - before);
+      });
+  };
+
+  var view = function(db, counter) {
+    var before = new Date().getTime();
+
+    return db.query('test/foo', {limit: 1})
+      .then(function() {
+        var after = new Date().getTime();
+        counter.val = counter.val + (after - before);
+      });
+  }
+
+  return Promise.all([
+    idb.put(ddoc),
+    indexeddb.put(ddoc)
+  ]).then(function() {
+    console.log('Added Ddocs, starting insert');
+    var p = Promise.resolve();
+
+    for (var i = 0; i < 100; i++) {
+      var docs = Array.apply(null, Array(100)).map(randomDoc);
+
+      p = p
+        .then(function() { return insert(idb, docs, idbInsert); })
+        .then(function() { return insert(indexeddb, docs, indexeddbInsert); });
+    }
+
+    return p.then(function() {
+      console.log('IDB Insert', idbInsert.val);
+      console.log('IndexedDB Insert', indexeddbInsert.val);
+
+      return view(idb, idbView)
+        .then(function() { return view(indexeddb, indexeddbView)})
+        .then(function() {
+          console.log('IDB view', idbView.val);
+          console.log('IndexedDB view', indexeddbView.val);
+        });
+    });
+  });
+}
+
+document.getElementById('go').addEventListener('click', function() {
+  go();
+});
+</script>
