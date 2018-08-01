@@ -7,6 +7,8 @@
 </body>
 <script type="text/javascript">
 window.MiniPouch = (dbName) => {
+  // Core PouchDB schema version. We'd increment this if we, as a library, wanted
+  // to make schema changes in indexeddb
   const POUCHDB_VERSION = 1;
 
   /*
@@ -14,9 +16,9 @@ window.MiniPouch = (dbName) => {
    * in millis that represents user migrations with a large multiplier that
    * represents PouchDB system migrations.
    *
-   * This lets us use the idb version number to both represent internal PouchDB
-   * migrations as well as user migrations required for adding / removing
-   * indexes etc.
+   * This lets us use the idb version number to both represent
+   * PouchDB-library-level migrations as well as "user migrations" required for
+   * when design documents have us add or remove indexes.
    *
    * Given that Number.MAX_SAFE_INTEGER = 9007199254740991
    *
@@ -24,37 +26,63 @@ window.MiniPouch = (dbName) => {
    *  - 900 system migrations up to 2198/02/18
    *  - or 89 system migrations up to 5050/02/14
    *
-   * This impl does the former.
+   * This impl does the former. If this code still exists in 5050 someone send
+   * my decendents a Spacebook message congratulating them on their impressive
+   * genes.
    *
-   * This could be smarter, as we could open the DB, work out the current
+   * NB: This could be smarter, as we could open the DB, work out the current
    * version and then close and reopen with version+1, but this is simpler.
-   *
    */
   const makeIdbVersion = () => {
     const multiplier = 100000000000000;
     return (multiplier * POUCHDB_VERSION) + new Date().getTime();
   };
-  // This works because we're either going to pass 0, '' or a version created
-  // from makeIdbVersion, which will be the correct format.
+  // This works because we're either going to be passed 0, '' or a version
+  // created from makeIdbVersion, which will be the correct length.
   const pouchdbVersion = (version) => Number.parseInt((''+version).substr(0, 3));
 
-  let db;
-  const openDb = (callback) => {
-    const version = makeIdbVersion();
-    const openReq = window.indexedDB.open(dbName, version);
+  let _db;
+  const setupDb = db => {
+    _db = db;
+
+    // TODO: Is putting error handling here good enough for any errors that occur
+    // in deeper objects (transactions etc?) Do they bubble like that? Or do I need
+    // to handle this everywhere?
+    _db.onerror = console.error;
+
+    // AFAICT this only gets fired if it closes unexpectently
+    //  (ie db.close() doesn't fire this)
+    _db.onclose = () => {
+      console.log('Unexpected DB close');
+      db = null;
+    };
+
+    _db.onversionchange = event => {
+      // If another tab tries to open the DB with a requested version change
+      // this gets fired. Safest thing to do is to close our reference (and null
+      // out, since that is the only way our code can tell apparently) and then
+      // re-open a non-migrating reference next time we need the DB.
+      console.log('onversionchange, closing DB', event);
+      _db.close();
+      _db = null;
+    }
+  }
+
+  const openDb = (freshVersion, callback) => {
+    console.log(`Opening DB ${freshVersion ? 'and checking indexes' : 'maybe stale'}`);
+
+    const openReq = freshVersion ? window.indexedDB.open(dbName, makeIdbVersion())
+                                 : window.indexedDB.open(dbName);
 
     openReq.onupgradeneeded = event => {
-      db = openReq.result;
-      // TODO: db.close() doesn't seem to fire this?
-      db.onclose = () => {
-        console.log('Unexpected DB close');
-        db = null;
-      };
+      setupDb(openReq.result);
 
+      // Perform any schema changes that occur because we've made a PouchDB-level
+      // architectural change
       const oldPouchDBVersion = pouchdbVersion(event.oldVersion);
       if (oldPouchDBVersion < 1) {
         // First time creating this DB
-        db.createObjectStore('docs', { keyPath: '_id' });
+        _db.createObjectStore('docs', { keyPath: '_id' });
       }
       if (oldPouchDBVersion < 2) {
         // This is where we could make a generic schema change based on changing
@@ -64,9 +92,8 @@ window.MiniPouch = (dbName) => {
         // ...etc
       }
 
-      // Regardless, we're going to use this opportunity to correct indexes
+      // Regardless, load all ddocs and make sure indexes are correct.
       const docsStore = openReq.transaction.objectStore('docs');
-
       const ddocsReq = docsStore.getAll(IDBKeyRange.bound('_design/', '_design/\uffff'));
       ddocsReq.onsuccess = event => {
         const ddocs = event.target.result;
@@ -82,13 +109,13 @@ window.MiniPouch = (dbName) => {
           return acc;
         }, []);
 
-        // Delete any indexes that aren't hard coded or expected
-        const hardcodedIndexes = [/* etc */];
+        // Delete any indexes that aren't system indexes or expected
+        const systemIndexes = [/* etc */];
         existingIndexes.forEach(index => {
-          if (!hardcodedIndexes.includes(index) && !expectedIndexes.includes(index)) {
+          if (!systemIndexes.includes(index) && !expectedIndexes.includes(index)) {
             docsStore.deleteIndex(index);
           }
-        })
+        });
 
         // Work out which indexes are missing and create them
         const newIndexes = expectedIndexes.filter(ei => !existingIndexes.includes(ei));
@@ -96,80 +123,72 @@ window.MiniPouch = (dbName) => {
           docsStore.createIndex(index.name, index.key);
         });
       };
-      ddocsReq.onerror = console.error;
     };
 
-    openReq.onversionchange = event => {
-      // I think this means we detect that the DB is about to change version,
-      // and so we should basically close and re-open the DB?
-      // However, if we just did this stupidly with a new version based on Date(),
-      // we would get into an infinite loop with multiple tabs. Instead, maybe
-      // we can re-open without a version (which opens the latest version), and
-      // hopefully a close then open will correctly block on the onupgradeneeded
-      // event finishing.
-      //
-      // We could also consider just closing the DB, and then whenever this PouchDB
-      // tries to use it, it checks and then attempts a re-open. If other tabs get
-      // sent this event when another tab is trying to upgrade this might even work
-      // without us needing to expose this stuff externally to PouchDB.
-      console.log('onversionchange', new Date(), event);
-    }
     openReq.onblocked = event => {
-      // Probably occurs if onversionchange events being sent out don't result
-      // in closes? So you fire off events to every tab, then they "complete"
-      // (whatever that means) and then you check again and there are still open
-      // dbs?
-      //
-      // Need to experiment with having onversionchange doing nothing, or
-      // immediately closing the DB, or immediately closing and then re-opening
-      // the DB
-      console.log('onblocked', new Date(), event);
+      // AFAICT this only occurs if, after sending `onversionchange` events to
+      // all other open DBs (ie in different tabs), there are still open
+      // connections to the DB. In this code we should never see this because we
+      // close our DBs on these events, and all DB interactions are wrapped in
+      // safely re-opening the DB.
+      console.log('onblocked, this should never happen?', event);
     }
-    openReq.onerror = event => console.error('onerror', event);
+
     openReq.onsuccess = event => {
-      db = openReq.result;
+      setupDb(openReq.result);
       callback();
     };
   };
 
-  openDb(() => console.log('Ready'));
+  const getDb = (callback) => {
+    if (_db) {
+      callback(_db);
+    } else {
+      openDb(false, () => callback(_db));
+    }
+  }
+
+  openDb(true, () => console.log('Ready'));
 
   return {
-    _db: () => db,
+    _db: getDb,
     put: document => new Promise((resolve, reject) => {
-      const trans = db.transaction(['docs'], 'readwrite');
-      trans.onerror = reject;
-      trans.oncomplete = () => {
-        // Detect _design writes and re-evaluate DB
-        // Optimisation: check existing indexes and see if we really need to
-        // change indexes. If we can have the ddoc name in the index name
-        // we can do this without requesting anything from the DB
-        if (/^_design\//.test(document._id)) {
-          db.close();
-          openDb(resolve);
-        } else {
-          resolve();
-        }
-      };
+      getDb(db => {
+        const trans = db.transaction(['docs'], 'readwrite');
+        trans.onerror = reject;
+        trans.oncomplete = () => {
+          // Detect _design writes and re-evaluate DB
+          // Optimisation: check existing indexes and see if we really need to
+          // change indexes. If we can have the ddoc name in the index name
+          // we can do this without requesting anything from the DB
+          if (/^_design\//.test(document._id)) {
+            db.close();
+            openDb(true, resolve);
+          } else {
+            resolve();
+          }
+        };
 
-      const docsStore = trans.objectStore('docs');
-      docsStore.put(document);
+        const docsStore = trans.objectStore('docs');
+        docsStore.put(document);
+      });
     }),
     get: documentId => new Promise((resolve, reject) => {
-      const trans = db.transaction(['docs'], 'readonly')
-      trans.onerror = reject;
-      trans.oncomplete = () => resolve(document);
+      getDb(db => {
+        const trans = db.transaction(['docs'], 'readonly')
+        trans.onerror = reject;
+        trans.oncomplete = () => resolve(document);
 
-      let document;
-      const docsStore = trans.objectStore('docs');
-      const docsReq = docsStore.get(documentId)
-      // TODO: do we need to map this all the time or does the DB onerror handler
-      //       handle it?
-      docsReq.onerror = reject;
-      docsReq.onsuccess = event => {
-        console.log('GET', event);
-        resolve(event.target.result);
-      };
+        let document;
+        const docsStore = trans.objectStore('docs');
+        const docsReq = docsStore.get(documentId)
+        // TODO: do we need to map this all the time or does the DB onerror handler
+        //       handle it?
+        docsReq.onerror = reject;
+        docsReq.onsuccess = event => {
+          resolve(event.target.result);
+        };
+      });
     })
   };
 };
