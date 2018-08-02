@@ -181,13 +181,11 @@ window.MiniPouch = (dbName) => {
 
         let document;
         const docsStore = trans.objectStore('docs');
-        const docsReq = docsStore.get(documentId)
-        // TODO: do we need to map this all the time or does the DB onerror handler
-        //       handle it?
-        docsReq.onerror = reject;
-        docsReq.onsuccess = event => {
-          resolve(event.target.result);
-        };
+        docsStore
+          .get(documentId)
+          .onsuccess = event => {
+            resolve(event.target.result);
+          };
       });
     })
   };
