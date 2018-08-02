@@ -31,15 +31,19 @@ window.MiniPouch = (dbName) => {
    * genes.
    *
    * NB: This could be smarter, as we could open the DB, work out the current
-   * version and then close and reopen with version+1, but this is simpler.
+   * version and then close and reopen with version+1, but this is simpler for
+   * now.
+   *
    */
+  const multiplier = Math.pow(10, 13); // 9007199254740991 <- MAX_SAFE_INTEGER
+                                       //   10000000000000 <- 10^13
+                                       //    7199254740991 <- 2198-02-18T16:59:00.991Z
   const makeIdbVersion = () => {
-    const multiplier = 100000000000000;
-    return (multiplier * POUCHDB_VERSION) + new Date().getTime();
+    const idbVersion = (multiplier * POUCHDB_VERSION) + new Date().getTime();
+    console.log('Made IDB version', idbVersion);
+    return idbVersion;
   };
-  // This works because we're either going to be passed 0, '' or a version
-  // created from makeIdbVersion, which will be the correct length.
-  const pouchdbVersion = (version) => Number.parseInt((''+version).substr(0, 3));
+  const pouchdbVersion = (version) => Math.floor(version / multiplier)
 
   let _db;
   const setupDb = db => {
@@ -68,18 +72,22 @@ window.MiniPouch = (dbName) => {
     }
   }
 
-  const openDb = (freshVersion, callback) => {
-    console.log(`Opening DB ${freshVersion ? 'and checking indexes' : 'maybe stale'}`);
+  const openDb = (checkIndexes, callback) => {
+    console.log(`Opening DB ${checkIndexes ? 'and checking indexes' : 'maybe stale'}`);
 
-    const openReq = freshVersion ? window.indexedDB.open(dbName, makeIdbVersion())
+    const openReq = checkIndexes ? window.indexedDB.open(dbName, makeIdbVersion())
                                  : window.indexedDB.open(dbName);
 
     openReq.onupgradeneeded = event => {
+      console.log(`Upgrade needed, from ${event.oldVersion} to ${event.newVersion}`);
+
       setupDb(openReq.result);
 
       // Perform any schema changes that occur because we've made a PouchDB-level
       // architectural change
       const oldPouchDBVersion = pouchdbVersion(event.oldVersion);
+      console.log('Existing PouchDB version parsed as', oldPouchDBVersion);
+
       if (oldPouchDBVersion < 1) {
         // First time creating this DB
         _db.createObjectStore('docs', { keyPath: '_id' });
@@ -110,7 +118,7 @@ window.MiniPouch = (dbName) => {
         }, []);
 
         // Delete any indexes that aren't system indexes or expected
-        const systemIndexes = [/* etc */];
+        const systemIndexes = [/* seq etc */];
         existingIndexes.forEach(index => {
           if (!systemIndexes.includes(index) && !expectedIndexes.includes(index)) {
             docsStore.deleteIndex(index);
@@ -138,6 +146,8 @@ window.MiniPouch = (dbName) => {
       setupDb(openReq.result);
       callback();
     };
+
+    openReq.onerror = console.error;
   };
 
   const getDb = (callback) => {
@@ -151,7 +161,10 @@ window.MiniPouch = (dbName) => {
   openDb(true, () => console.log('Ready'));
 
   return {
-    _db: getDb,
+    _makeIdbVersion: makeIdbVersion,
+    _pouchdbVersion: pouchdbVersion,
+    _openDb: openDb,
+    _getDb: () => new Promise(resolve => getDb(resolve)),
     put: document => new Promise((resolve, reject) => {
       getDb(db => {
         const trans = db.transaction(['docs'], 'readwrite');
