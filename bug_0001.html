@@ -23,8 +23,23 @@
         console.log(`Upgrade needed, from ${event.oldVersion} to ${event.newVersion}`);
       }
 
+      openReq.onblocked = event => {
+        console.log('Blocked event', event, version);
+      }
+
       openReq.onsuccess = event => {
         console.log('DB Open success', version);
+
+        const db = event.target.result;
+
+        db.onabort = event => console.log('db onabort', event, version);
+        db.onclose = event => console.log('db onclose', event, version);
+        db.onerror = event => console.log('db onerror', event, version);
+        db.onversionchange = event => {
+          console.log('db onversionchange', event, version);
+          db.close();
+        }
+
         resolve();
       }
 
@@ -60,6 +75,8 @@
     await upgrade(1);
     await upgrade(2);
     await upgrade(3);
+    await upgrade(4);
+    await upgrade(5);
     console.log('DONE');
   }
 
