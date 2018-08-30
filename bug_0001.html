@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title></title>
+</head>
+<body>
+  <p>To test whether your browser handles idb versions as 64bit integers</p>
+  <button id="upgrade1">click me</button>
+  <p>Or, to test the upgrade speed between more normal versions</p>
+  <button id="upgrade2">click me</button>
+</body>
+</html>
+<script type="text/javascript">
+
+  const DB_NAME = 'test';
+
+  function upgrade(version) {
+    return new Promise((resolve, reject) => {
+      console.log('Opening DB at version', version);
+      const openReq = indexedDB.open(DB_NAME, version);
+
+      openReq.onupgradeneeded = event => {
+        console.log(`Upgrade needed, from ${event.oldVersion} to ${event.newVersion}`);
+      }
+
+      openReq.onsuccess = event => {
+        console.log('DB Open success', version);
+        resolve();
+      }
+
+      openReq.onerror = err => {
+        console.log('DB open error', err, version);
+        reject(err);
+      };
+    });
+  };
+
+  async function upgrade1() {
+    indexedDB.deleteDatabase(DB_NAME);
+    console.log('First we are going to upgrade to 11533313039435, which in binary is');
+    console.log('0000000000000000000010100111110101001111000001101101110001001011');
+    console.log('of which the last 32 bits are   01001111000001101101110001001011');
+    await upgrade(11533313039435);
+    console.log('You should have seen upgrade needed above');
+    console.log('Now we are going to upgrade to 11535460523083, which in binary is');
+    console.log('0000000000000000000010100111110111001111000001101101110001001011');
+    console.log('of which the last 32 bits are   11001111000001101101110001001011');
+    console.log('BEFORE we do that though, note the 32bit sign is set.');
+    console.log('If you were to incorrect parse this 64bit number as 32bit you would think');
+    console.log('this second number is smaller than the first, when it is not');
+    console.log('OK, let us try to upgrade to this definitely larger db version');
+    await upgrade(11535460523083);
+    console.log('^^ did you get an upgrade needed above?');
+    console.log('If so, your browser is parsing these numbers correctly');
+    console.log('If not, your browser is parsing 64bit idb versions as 32bits');
+  }
+
+  async function upgrade2() {
+    indexedDB.deleteDatabase(DB_NAME);
+    await upgrade(1);
+    await upgrade(2);
+    await upgrade(3);
+    console.log('DONE');
+  }
+
+
+  document.getElementById('upgrade1').addEventListener('click', upgrade1);
+  document.getElementById('upgrade2').addEventListener('click', upgrade2);
+</script>
