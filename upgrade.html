@@ -4,9 +4,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 </head>
 <body>
+  <h1>Start the soak test:</h1>
+
+  <p>With a <input id="transRestMillis" type="text" value="10"> millisecond rest between transactions and a <input id="writeRestMillis" type="text" value="1"> millisecond rest between writes, write <input id="writeCount" type="text" value="1000"> docs with a <input id="critChance" type="text" value="5"> percent chance one of those documents forces a DB upgrade.</p>
+
+  <button id="relax">Just relax</button>
+
+  <h1>Alternatively</h1>
+  <button id="write">Write a normal doc</button>
+  <button id="writeDdoc">Write an index triggering doc</button>
 </body>
 <script type="text/javascript">
-window.MiniPouch = (dbName) => {
+window.MiniPouch = function(dbName) {
   // Core PouchDB schema version. We'd increment this if we, as a library, wanted
   // to make schema changes in indexeddb
   const POUCHDB_VERSION = 1;
@@ -160,22 +169,27 @@ window.MiniPouch = (dbName) => {
 
   openDb(true, () => console.log('Ready'));
 
-  return {
+  const api = {
     _makeIdbVersion: makeIdbVersion,
     _pouchdbVersion: pouchdbVersion,
     _openDb: openDb,
     _getDb: () => new Promise(resolve => getDb(resolve)),
-    put: document => new Promise((resolve, reject) => {
+    put: (documents, _delay) => new Promise((resolve, reject) => {
+      if (!Array.isArray(documents)) {
+        documents = [documents];
+      }
+
       getDb(db => {
         const trans = db.transaction(['docs'], 'readwrite');
-        trans.onerror = reject;
+        trans.onabort = trans.onerror = reject;
         trans.oncomplete = () => {
           // Detect _design writes and re-evaluate DB
           // Optimisation: check existing indexes and see if we really need to
           // change indexes. If we can have the ddoc name in the index name
           // we can do this without requesting anything from the DB
-          if (/^_design\//.test(document._id)) {
+          if (documents.find(doc => /^_design\//.test(doc._id))) {
             db.close();
+            db = null;
             openDb(true, resolve);
           } else {
             resolve();
@@ -183,13 +197,36 @@ window.MiniPouch = (dbName) => {
         };
 
         const docsStore = trans.objectStore('docs');
-        docsStore.put(document);
+
+        // let count = documents.length;
+        // const success = () => {
+        //   count -= 1;
+
+
+        // };
+
+        if (!_delay) {
+          for (doc of documents) {
+            const putReq = docsStore.put(doc);
+            putReq.onerror = console.error;
+            // putReq.onsuccess = () => null;
+          }
+        } else {
+          const writeLoop = () => {
+            if (documents.length) {
+              docsStore.put(documents.pop());
+              setTimeout(writeLoop, _delay);
+            }
+          }
+
+          writeLoop();
+        }
       });
     }),
     get: documentId => new Promise((resolve, reject) => {
       getDb(db => {
         const trans = db.transaction(['docs'], 'readonly')
-        trans.onerror = reject;
+        trans.onabort = trans.onerror = reject;
         trans.oncomplete = () => resolve(document);
 
         let document;
@@ -202,5 +239,66 @@ window.MiniPouch = (dbName) => {
       });
     })
   };
+  return api;
 };
+
+
+const relaxDb = new MiniPouch('relax');
+
+function relax() {
+  // We aren't trying to deal with transactions that fail due to write conflicts
+  // right now. Let's just concentrate on smashing the DB from different tabs
+  // in a way that occasionally causes us to reopen the DB
+  let seed = Math.floor(Math.random() * 10000);
+
+  let lastDocId = 0;
+
+  const transRestMillis = Number.parseInt(document.getElementById('transRestMillis').value);
+  const writeRestMillis = Number.parseInt(document.getElementById('writeRestMillis').value);
+  const writeCount = Number.parseInt(document.getElementById('writeCount').value);
+  const critChance = Number.parseInt(document.getElementById('critChance').value);
+
+  const transaction = () => {
+    console.log('Starting transaction');
+    const docs = [];
+    for (let c = writeCount; c > 0; c--) {
+      docs.push({_id: `${seed}-${lastDocId}`});
+      lastDocId += 1;
+    }
+
+    if (Math.random() < (critChance / 100)) {
+      console.log('Transaction contains DESIGN DOCUMENT');
+      docs[0]._id = '_design/' + docs[0]._id;
+    }
+
+    console.log('Pre-put');
+    return relaxDb.put(docs/*, writeRestMillis*/)
+      .then(() => console.log('Post-put'));
+  };
+
+  const whileLoop = () => {
+    transaction()
+      .then(() => {
+        console.log('Waiting between transactions');
+        setTimeout(whileLoop, transRestMillis);
+      });
+  };
+  whileLoop();
+};
+
+const write = () => {
+  const doc = {_id: `manual-write-${Math.random()}`};
+  relaxDb.put(doc)
+    .then(() => console.log(`Wrote ${doc._id}`));
+};
+
+const writeDdoc = () => {
+  const doc = {_id: `_design/manual-write-${Math.random()}`};
+  relaxDb.put(doc)
+    .then(() => console.log(`Wrote ${doc._id}`));
+};
+
+document.getElementById('relax').addEventListener('click', relax);
+document.getElementById('write').addEventListener('click', write);
+document.getElementById('writeDdoc').addEventListener('click', writeDdoc);
 </script>
